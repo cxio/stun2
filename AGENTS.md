@@ -23,7 +23,7 @@
 - **语言**: Go 1.25.5
 - **模块路径**: `github.com/cxio/stun2`
 - **许可证**: MIT License
-- **主要功能**: NAT 类型探测、存活期探测、UDP 打洞
+- **主要功能**: NAT 类型探测、存活期探测
 
 ---
 
@@ -276,11 +276,10 @@ git commit -m "修订，基本完成。"
 
 ### 添加新功能
 
-1. 在 README.md 中记录设计思路
-2. 定义相关类型和常量
-3. 实现核心函数
-4. 编写测试用例
-5. 更新文档注释
+1. 定义相关类型和常量
+2. 实现核心函数
+3. 编写测试用例
+4. 更新文档注释和项目使用说明（README.md）
 
 ### 调试技巧
 
@@ -317,7 +316,7 @@ go tool pprof cpu.prof
 - [Go 语言规范](https://go.dev/ref/spec)
 - [Effective Go](https://go.dev/doc/effective_go)
 - [RFC 3489 - STUN](https://datatracker.ietf.org/doc/html/rfc3489)
-- [项目 README](./README.md) - 详细的 NAT 探测设计文档
+- [项目 design](./design.md) - 详细的 NAT 探测设计文档
 
 ---
 
