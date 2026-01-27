@@ -22,7 +22,7 @@
 
 1. `Open Internet`：开放网络（`Public`）。没有任何约束的公网地址，支持任何连入。
 2. `UDP Firewall`：有UDP防火墙。仅主动连出的目标可以与内网节点通讯，即：先有连出，后可连入。
-3. `UDP Blocked`：UDP阻塞。完全禁用UDP的通讯。
+3. `UDP Blocked`：UDP阻塞。可能 `UDP:53` 等系统级消息正常，但无法用于普通的UDP通讯。
 
 
 ### 可连通性
