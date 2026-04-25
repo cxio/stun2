@@ -1,0 +1,5 @@
+/* VSCode: 针对 Markdown 代码块字符图预览对齐 */
+pre > code.language-graph {
+    font-family: "Sarasa Mono SC", monospace !important;
+    line-height: 110% !important;
+}
