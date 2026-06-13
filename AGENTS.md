@@ -23,7 +23,7 @@ go mod tidy             # 整理依赖
 
 ### 核心数据类型（`natlevel.go`）
 
-- **`NatLevel`**：NAT 等级枚举（-1 错误 / 0 Full Cone / 1 RC / 2 PRC / 3 Symmetric / 4 PRC|Sym）
+- **`NatLevel`**：NAT 等级枚举（-1 错误 / 0 Public / 1 Full Cone / 2 RC / 3 PRC / 4 Symmetric / 5 PRC|Sym）
 - **`UDPSendi`**：服务端探测方式（本地地址 / 新端口 / 新主机）
 - **`ClientSN [16]byte`**：客户端会话号，用于追踪探测消息
 - **`Notice`**：STUN 服务器间协作通知

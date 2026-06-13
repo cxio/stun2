@@ -38,15 +38,12 @@ const (
 	UDPSEND_NEWHOST                 // UDP 发送：新主机
 )
 
-// ClientSN 客户端序列号类型。
-type ClientSN [16]byte
-
 // Notice 协作通知
 // 当前服务节点向另一台服务器发送UDP协作要求（NewHost操作）。
 type Notice struct {
-	Op   UDPSendi     // UDP发送指示
-	Addr *net.UDPAddr // 目标客户端地址
-	SN   ClientSN     // 待发送内容
+	Op    UDPSendi     // UDP发送指示
+	Addr  *net.UDPAddr // 目标客户端地址
+	Bas16 []byte       // 客户端SN构造因子（16字节）
 }
 
 // 三个UDP消息置位标记
