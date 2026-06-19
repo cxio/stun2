@@ -10,7 +10,7 @@ NAT映射有存活期，通讯静默超时后NAT映射会失效，对某些应�
 服务端运行一个存活期探测服务 quic.Listener，由一个已经存在的 net.UDPConn 创建。
 
 > **实现：**
-> 参见 quic-go 库的 `quic.Transport{Conn: udpConn}`, `Transport.ReadNonQUICPacket()` 等用法。
+> 参见 quic-go 库的 `quic.Transport{Conn: udpConn}` 用法。
 
 
 ## 预探测（Step.0）
@@ -61,7 +61,15 @@ NAT映射有存活期，通讯静默超时后NAT映射会失效，对某些应�
 
 ```go
 // Rnd16: 16字节随机序列。
-// LocalAddr: 客户端公网地址或服务器地址。
+// Rnd16[0]: 首字节高两位置零，标识非 QUIC 数据包。
+// 设计：
+// 服务端需要此标志位来区分是 QUIC 连接和裸 UDP 连接的消息。
+// 因为服务端在同一地址监听任意客户端消息。
+Rnd16[0] &= 0x3F
+
+// LocalAddr:
+// - 客户端：自己的公网地址，服务端可通过 conn.RemoteAddr() 获取。
+// - 服务器：服务器地址。客户端已知服务器地址，可执行验证。
 // TmpN: 变长随机字节序列，用于隐藏 SN 的长度特征。长度：464 ~ 1024
 // 前段固定 16 + 32 = 48 字节。
 SN = Rnd16 + HMAC_SHA256(Key32, Rnd16 + LocalAddr + TmpN) + TmpN
