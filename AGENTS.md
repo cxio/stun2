@@ -20,6 +20,7 @@
 
 设计阶段的 Go 库，**当前仓库尚无 Go 源码**（除 `go.mod`）。权威设计规格在 `docs/conception/`，实现前必读：
 
+- `docs/conception/conelevel.md` — NAT 公网映射地址获取（`STUN:Addr`）。
 - `docs/conception/conelevel.md` — NAT 类型/层级探测协议（`STUN:Cone`）。
 - `docs/conception/keepalive.md` — NAT 映射存活期探测协议（`STUN:Live`）。
 
@@ -48,7 +49,7 @@ SN = Rnd16 + HMAC_SHA256(Key, Rnd16 + TmpN) + TmpN
 **Keepalive（`keepalive.md:§.会话标识`）**——含对端地址，可互相验证：
 ```
 Rnd16[0] &= 0x3F    // 仅高 2 位清零，无 NewPort/NewHost 标志
-SN = Rnd16 + HMAC_SHA256(Key32, Rnd16 + LocalAddr + TmpN) + TmpN
+SN = Rnd16 + HMAC_SHA256(Key32, Rnd16 + LocalIP + TmpN) + TmpN
 ```
 
 ### NewHost 密钥封装
@@ -78,3 +79,7 @@ SN = Rnd16 + HMAC_SHA256(Key32, Rnd16 + LocalAddr + TmpN) + TmpN
 
 - 文档、注释、交互输出用简体中文；程序运行时消息/日志（`fmt`、`errors.New`、`log` 等实参）用英文。
 - 标识符、目录/文件名、技术术语沿用英文。
+
+## 实现边界
+
+本项目是 STUN2 协议的接口定义和实现，是一个纯库。使用该协议的服务器和客户端由另外的项目负责。
