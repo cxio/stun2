@@ -13,7 +13,7 @@ NAT映射有存活期，通讯静默超时后NAT映射会失效，对某些应�
 > 参见 quic-go 库的 `quic.Transport{Conn: udpConn}` 用法。
 
 
-## 预探测（Step.0）
+## 预探测（`STUN:Addr`）：Step.0
 
 客户端创建到服务器的普通 UDP 拨号连接（net.UDPConn），并基于此连接创建一个 QUIC 拨号（quic.Conn）连接。
 
@@ -107,7 +107,7 @@ SN = Rnd16 + HMAC_SHA256(Key32, Rnd16 + LocalAddr + TmpN) + TmpN
 
 在一个探测周期内，客户端多次向服务器请求 `STUN:Live` 探测（Step.2）。
 
-客户端超时设置为**10**秒，如果在 10 秒内没有收到服务器的任何回应，即可断定该次探测为失败。
+客户端超时设置为**12**秒，如果在 12 秒内没有收到服务器的任何回应，即可断定该次探测为失败。
 
 
 ### 粗测
