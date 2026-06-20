@@ -1,5 +1,21 @@
 # AGENTS.md
 
+## 目录结构概览
+
+项目分为四个层级：2个核心层级，由用户设计，2个辅助层级，由 AI 生成。权威性自上而下递减：
+
+| 层级 | 目录 | 作者 | 说明 |
+|------|------|------|------|
+| Conception（构想层） | `docs/conception/` | 人工编写 | 设计构想，作者对协议、系统和应用边界的原始设计。 |
+| Decision（决策层） | `docs/decision/` | AI 生成 + 人工审阅 | 架构决策，仅记录 conception 尚未明确的补充决策（`DEC-NNNN`）。 |
+| Proposal（提案层） | `docs/proposal/` | AI 生成 | 详细技术规格，追溯自 conception + decision。 |
+| Plan（方案层） | `docs/plan/` | AI 生成 | 按阶段的实施计划（TDD 任务、包边界、文件清单），追溯自 proposal。 |
+
+**权威顺序：** `Conception` > `Decision` > `Proposal` > `Plan`。遇冲突以更上层为准，最终以 `Conception` 为准。若发现 `Proposal` 或 `Plan` 与 `Conception` 或 `Decision` 不一致，先修改受影响的 `Conception` 或 `Decision` 文档，再重新生成对应的 `Proposal` 和 `Plan` 文件；不要只修改一个文件而不同步其下游内容。
+
+`docs/plans/` 目录下的文档为 AI Agent 工作过程中的临时实施计划，不作为正式文档的一部分。
+
+
 ## 项目状态
 
 设计阶段的 Go 库，**当前仓库尚无 Go 源码**（除 `go.mod`）。权威设计规格在 `docs/conception/`，实现前必读：
@@ -7,7 +23,7 @@
 - `docs/conception/conelevel.md` — NAT 类型/层级探测协议（`STUN:Cone`）。
 - `docs/conception/keepalive.md` — NAT 映射存活期探测协议（`STUN:Live`）。
 
-实现新功能时，先以这两份文档为准；文档与代码冲突时以**已审定的文档**为准（提交历史显示文档经过多轮 AI 评审修订）。
+实现新功能时，先以这两份文档为准；文档与代码冲突时以**已审定的文档**为准（提交历史显示文档经过多轮 AI 评审修订）。若新功能在 `docs/conception/conelevel.md` 或 `docs/conception/keepalive.md` 中没有明确覆盖，先停止并生成或更新对应的 `docs/decision/` 说明，再继续实现；不得凭直觉补全未定义行为。
 
 - module: `github.com/cxio/stun2`，Go `1.26.2`。
 - `docs/decision/`、`docs/plan/`、`docs/proposal/` 目前为空，是预留目录。
@@ -16,10 +32,8 @@
 
 - 这**不是** RFC 3489 STUN。探测流程基于「STUN 服务节点本身是一个 P2P 网络、节点间可相互协作发包」的前提重新设计，不要照搬传统 STUN 实现。
 - 通信模式固定为 **QUIC 安全连接 + 底层裸 UDP socket 复用**：QUIC 负责安全传输，底层裸 UDP 用于 NAT 映射探测。
-- 必须用 `quic-go` 库，且采用 `quic.Transport{Conn: udpConn}` + `Transport.ReadNonQUICPacket()` 模式，由外部传入 `net.UDPConn`（同一 socket 上同时跑 QUIC 与裸 UDP）。
+- 必须用 `quic-go` 库，且采用 `quic.Transport{Conn: udpConn}` + `Transport.ReadNonQUICPacket()` 模式，由外部传入 `net.UDPConn`（同一 socket 上同时跑 QUIC 与裸 UDP）。库接口测试时，无线上实际数据，可用伪造节点元数据替代。
 - 服务节点信息（SPKI、ECH 公钥等）来自 [cxio/p2p](https://github.com/cxio/p2p) 项目，不在本库范围内。
-
-## 协议实现要点（细节敏感，勿凭直觉）
 
 ### 会话标识 SN — 两套协议规则不同
 
@@ -33,7 +47,7 @@ SN = Rnd16 + HMAC_SHA256(Key, Rnd16 + TmpN) + TmpN
 
 **Keepalive（`keepalive.md:§.会话标识`）**——含对端地址，可互相验证：
 ```
-Rnd16[0] &= 0x3F                       // 仅高 2 位清零，无 NewPort/NewHost 标志
+Rnd16[0] &= 0x3F    // 仅高 2 位清零，无 NewPort/NewHost 标志
 SN = Rnd16 + HMAC_SHA256(Key32, Rnd16 + LocalAddr + TmpN) + TmpN
 ```
 
