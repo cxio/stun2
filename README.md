@@ -13,14 +13,14 @@
 
 常见的NAT类型有：
 
-1. `Full Cone`：完全圆锥型（`FullC`）。最宽松，网关不对外部来源地址（IP:Port）作任何限制，可接收任意地址的数据包进入内网。
-2. `Restricted Cone`：受限圆锥型（`RC`）。外部连入的源IP需与内网连出时的目标IP相同，端口任意。
-3. `Port Restricted Cone`：端口受限圆锥型（`P-RC`）。除了IP要一致外（`RC`），外部连入的源Port必须等于内部连出的目标Port（更严过滤）。
-4. `Symmetric Like`：类对称型（`Sym-Like`）。内网主机连出的每一个不同目标都会新建一个不同的NAT映射，外部端口没有确定性。
+1. `FullC`：完全圆锥型（`Full Cone`）。最宽松，网关不对外部来源地址（IP:Port）作任何限制，可接收任意地址的数据包进入内网。
+2. `RC`：受限圆锥型（`Restricted Cone`）。外部连入的源IP需与内网连出时的目标IP相同，端口任意。
+3. `P-RC`：端口受限圆锥型（`Port Restricted Cone`）。除了IP要一致外（`RC`），外部连入的源Port必须等于内部连出的目标Port（更严过滤）。
+4. `Sym-Like`：类对称型（`Symmetric Like`）。内网主机连出的每一个不同目标都会新建一个不同的NAT映射，外部端口没有确定性。
 
 另外还有几个不属于NAT但与UDP通讯相关的网域类型：
 
-1. `Open Internet`：开放网络（`Public`）。没有任何约束的公网地址，支持任何连入。
+1. `Public`：开放网络（`Open Internet`）。没有任何约束的公网地址，支持任何连入。
 2. `UDP Firewall`：有UDP防火墙。仅主动连出的目标可以与内网节点通讯，即：先有连出，后可连入。
 3. `UDP Blocked`：UDP阻塞。可能 `UDP:53` 等系统级消息正常，但无法用于普通的UDP通讯。
 

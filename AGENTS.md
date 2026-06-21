@@ -20,8 +20,7 @@
 
 设计阶段的 Go 库，**当前仓库尚无 Go 源码**（除 `go.mod`）。权威设计规格在 `docs/conception/`，实现前必读：
 
-- `docs/conception/conelevel.md` — NAT 公网映射地址获取（`STUN:Addr`）。
-- `docs/conception/conelevel.md` — NAT 类型/层级探测协议（`STUN:Cone`）。
+- `docs/conception/conelevel.md` — NAT 公网映射地址获取（`STUN:Addr`） & 类型探测协议（`STUN:Cone`）。
 - `docs/conception/keepalive.md` — NAT 映射存活期探测协议（`STUN:Live`）。
 
 实现新功能时，先以这两份文档为准；文档与代码冲突时以**已审定的文档**为准（提交历史显示文档经过多轮 AI 评审修订）。若新功能在 `docs/conception/conelevel.md` 或 `docs/conception/keepalive.md` 中没有明确覆盖，先停止并生成或更新对应的 `docs/decision/` 说明，再继续实现；不得凭直觉补全未定义行为。
