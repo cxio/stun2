@@ -47,7 +47,17 @@
 
 位于 `decision/` 目录。Decision 的作用是补充 Conception 尚未直接固定的规范化细节，例如字节编码、极端边界、字段宽度和实现路径等。
 
-（相关简要说明，待更新）
+| 编号 | 文件 | 覆盖主题 |
+|------|------|---------|
+| `DEC-0001` | `decision/DEC-0001-layer-boundary.md` | 协议层与应用层的边界划分 |
+| `DEC-0002` | `decision/DEC-0002-transaction-concurrency.md` | `STUN:Cone`/`STUN:Live` 同一 `UDPConn` 上的并发约束、禁止按远端 IP 区分 transaction |
+| `DEC-0003` | `decision/DEC-0003-cone-closure-and-cleanup.md` | Cone 关闭握手机制（QUIC 关闭事件）、服务端独立等待超时与资源释放 |
+| `DEC-0004` | `decision/DEC-0004-live-localip-binding.md` | Keepalive SN 中 `LocalIP` 取值来源、服务端多归属绑定建议 |
+| `DEC-0005` | `decision/DEC-0005-newhost-notice-format.md` | `NewHost` 受托 `Notice` 消息字段格式（含 `AppID`/`AppData` 扩展） |
+| `DEC-0006` | `decision/DEC-0006-exclist-upper-bound.md` | `Exclist` 容量上限固定为 256，不做协商 |
+| `DEC-0007` | `decision/DEC-0007-control-frame-format.md` | 控制面帧格式（帧头、`MsgType`、错误码结构）、QUIC 传输模型、字节序 |
+| `DEC-0008` | `decision/DEC-0008-wire-address-format.md` | 控制消息中 `IP:Port` 的 `WireAddr` 定长编码 |
+| `DEC-0009` | `decision/DEC-0009-service-payload-encoding.md` | `STUN:Addr`/`STUN:Cone`/`STUN:Live` 各请求/响应 Payload 字段编码、Live 去重规则 |
 
 维护规则：
 
@@ -63,8 +73,10 @@
 每篇含「来源追溯」「规格正文」「边界与限制」「待决问题」「对 Plan 的约束」。
 
 | 编号 | 文件 | 覆盖主题 |
-|------|------|---------|
-| （待更新） | （待更新） | （待更新） |
+|------|------|------|
+| v1 | `proposal/wire-spec-v1.md` | 控制面帧格式、`WireAddr`、三原语 Payload、Notice 消息、错误码 |
+| v1 | `proposal/sn-spec-v1.md` | 探测面 SN 二进制布局、位规则、HMAC 构造与验证、`LocalIP` |
+| v1 | `proposal/transaction-spec-v1.md` | `STUN:Addr` / `STUN:Cone` / `STUN:Live` 状态机、竞态、冗余发送时序、去重、NAT 类型结果语义 |
 
 维护规则：
 
