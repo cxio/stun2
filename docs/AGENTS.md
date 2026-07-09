@@ -9,7 +9,7 @@
 
 | 层级 | 目录 | 作者 | 说明 |
 |------|------|------|------|
-| Conception（构想层） | `conception/` | 人工编写 | 设计构想，作者对协议、系统和应用边界的原始设计。 |
+| Conception（构想层） | `conception/` | 人工编写（或人类主导） | 设计构想，作者对协议、系统和应用边界的原始设计。 |
 | Decision（决策层） | `decision/` | AI 生成 + 人工审阅 | 架构决策，仅记录 Conception 尚未明确的补充决策（`DEC-NNNN`）。 |
 | Proposal（提案层） | `proposal/` | AI 生成 | 详细技术规格，追溯自 Conception + Decision。 |
 | Plan（方案层） | `plan/` | AI 生成 | 按阶段的实施计划（TDD 任务、包边界、文件清单），追溯自 Proposal。 |
