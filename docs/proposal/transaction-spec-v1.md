@@ -14,7 +14,9 @@
 | `proposal/wire-spec-v1.md` | 控制帧、Payload 字段 |
 | `proposal/sn-spec-v1.md` | SN 构造、验证 |
 
-本文档为 **强规范**，定义单次 transaction 内双方 **MUST** 一致的状态迁移、竞态处理与冗余发送时序。粗测/精测调度、多节点 Addr 预探测、受托节点选择 **不** 在本文档范围（应用层，`DEC-0001`）。
+本文档为 **强规范**，定义单次 transaction 内双方 **MUST** 一致的状态迁移、竞态处理与冗余发送时序。
+
+ 粗测/精测调度、多节点 Addr 预探测、受托节点选择 **不** 在本文档范围（应用层，`DEC-0001`）。
 
 ---
 
@@ -22,13 +24,12 @@
 
 ### 1.1 Transaction 与并发约束（`DEC-0002`）
 
-一次 **transaction** 指：客户端发出一条 `*_REQ` 起，到探测窗口结束或收到明确 `*_ERR` 止的完整交互。每个 transaction 绑定一个 `RequestID`（控制面）和一份 `Key32`（探测面，Cone/Live 均有）。
+一次 **transaction** 指：**客户端**发出一条 `*_REQ` 起，到探测窗口结束或收到明确 `*_ERR` 止的完整交互。每个 transaction 绑定一个 `RequestID`（控制面）和一份 `Key32`（探测面，Cone/Live 均有）。
 
 - **协议层 MUST**：同一 `net.UDPConn` 上，任意时刻 **最多只能有一个** 处于探测等待状态的 `STUN:Cone` transaction。
 - **协议层 MUST**：同一 `net.UDPConn`（对应同一个 `Port0` 映射）上，任意时刻 **最多只能有一个** 未完成的 `STUN:Live` transaction。
 - **应用层**：客户端是否同时对多个服务节点发起 Cone 或 Live 探测以提升可靠性，属应用层调度策略；若选择并发，**MUST** 为每个并发 transaction 各自创建独立的 `net.UDPConn`，上述两条规则在每个 `UDPConn` 内部仍然适用。
 - **协议层 MUST NOT**：任何实现 **MUST NOT** 依赖"远端 IP"区分并发 transaction——`NewHost` 源 IP 对客户端设计上不可预知（`sn-spec-v1.md` §5）。
-- **不纳入协议常量**：服务端对同一客户端可并行处理的 `STUN:Live` transaction 数量上限，**不** 写入协议常量，由服务器实现自行配置/限流。
 
 ### 1.2 非 QUIC 包 demux
 
@@ -56,7 +57,7 @@
 | 阶段 | QUIC | 裸 UDP（同一 `UDPConn`） |
 |------|------|--------------------------|
 | 请求 | `CONE_REQ` → `CONE_ACK` / `CONE_ERR` | 尚未处理 SN |
-| 探测 | **MUST** 已关闭（客户端主动关闭，服务端观测该事件后才发包） | 收发 SN |
+| 探测 | **MUST** 已关闭（客户端主动关闭，服务端观测该事件后才发包） | 发送 SN |
 
 关闭 `quic.Conn` **MUST NOT** 关闭底层 `UDPConn`。
 
@@ -135,9 +136,10 @@ stateDiagram-v2
 
 | 参数 | 值 |
 |------|-----|
-| 每路径发送次数 | **3** |
-| 间隔 | 第 1→2 次：`100–300 ms`；第 2→3 次：`400–800 ms` |
-| 累计时长 | `500 ms – 1.1 s` |
+| 每路径发送次数 | **5**（NewPort） 或 **3**（NewHost） |
+| NewPort 间隔 | `100–400 ms` 随机取值 |
+| NewHost 间隔 | 第 1→2 次：`100–300 ms`；第 2→3 次：`400–800 ms` |
+| 累计时长 | `≤2s`（NewPort）或 `500ms – 1.1s`（NewHost） |
 
 服务器按规则发送即可，不等待客户端回应（探测面无回应机制）。每次发送 **MUST** 重新生成完整 SN。
 
