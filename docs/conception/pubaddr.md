@@ -5,4 +5,4 @@
 
 ## 地址格式
 
-连接可能通过 `IPv6` 链路，也可能是 `IPv4` 链路，因此返回的地址和端口，统一为 `IP:Port` 格式，其中 IP 为 `IPv6` 格式，IPv4 地址使用 `IPv4-mapped IPv6` 编码（`::ffff:IPv4`）。
+连接可能通过 `IPv6` 链路，也可能是 `IPv4` 链路，因此返回的 IP 地址统一为 `IPv6` 格式，即 IPv4 地址使用 `IPv4-mapped IPv6` 编码（`::ffff:IPv4`）。
