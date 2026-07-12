@@ -28,7 +28,6 @@
 ## 影响范围
 
 - **Conception**：`conelevel.md`"正式探测（STUN:Cone）"节、"会话标识"节；`keepalive.md`"探测循环"节。
-- **下游 Proposal**：`transaction-spec-v1.md` §1.1 已有的"客户端 MUST NOT 并发两个未完成的 Cone/Live transaction"表述与本决策一致，现由本 Decision 正式背书；§3.7"每客户端 ≤4 并发 LiveTx"的具体数字建议应改写为"由服务器实现自行决定，不作为协议 SHOULD 默认值"。
 
 ## 备选方案（已否决）
 

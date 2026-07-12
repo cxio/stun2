@@ -38,7 +38,7 @@
 
 | 功能 | 设计构想文件 |
 |------|-------------|
-| NAT 地址探测（`STUN:Addr`） | `conelevel.md` |
+| NAT 地址探测（`STUN:Addr`） | `pubaddr.md` |
 | NAT 类型探测（`STUN:Cone`） | `conelevel.md` |
 | NAT 存活期探测（`STUN:Live`） | `keepalive.md` |
 

@@ -176,22 +176,38 @@ Live 探测 **MUST** 使用两条客户端路径：
 
 客户端 **MUST** 用**新随机本地端口**创建新 QUIC，避免在旧映射上发送数据刷新 NAT 计时器（`keepalive.md` Step.1）。
 
-### 3.2 客户端状态机
+### 3.2 环境验证（`keepalive.md` §"环境验证"）
+
+新 QUIC 连接建立后、发送 `LIVE_REQ` **之前**，客户端 **MUST** 先在该新 QUIC 连接上执行一次 `STUN:Addr` 请求，复核外部网络环境是否已发生变化：
+
+1. 客户端在新 QUIC 连接上打开 stream，发送 `ADDR_REQ`，取得 `Observed2`；
+2. 将 `Observed2.IP` 与预探测阶段（`STUN:Addr` Step.0）记录的 `Observed1.IP` 比对（仅比较 IP；端口因新连接必然不同，不参与比较）：
+   - **相同**：外部网络环境未变，继续下一步（发送 `LIVE_REQ`）；
+   - **不同**：外部网络环境已变化，本次 `STUN:Live` 探测流程 **MUST** 终止，**MUST NOT** 再发送 `LIVE_REQ`。客户端如需继续探测存活期，**MUST** 从 `STUN:Addr` Step.0 重新开始（应用层调度，不在本 transaction 范围内，`DEC-0001` §1）。
+
+> **注意**：环境验证不是 `STUN:Live` transaction 的一部分（§1.1 中 transaction 起点为 `LIVE_REQ`）；它是发起 Live transaction 前的必要前置校验。环境验证判定环境已变化时，本轮 Live 探测直接不发生，**不** 计入 `MappingAlive` 结果（既非 `true` 也非 `false`）。
+
+### 3.3 客户端状态机
 
 ```mermaid
 stateDiagram-v2
     [*] --> OldListen: 旧 UDPConn 监听 SN
-    OldListen --> LiveReq: 新 QUIC 发送 LIVE_REQ
+    OldListen --> EnvCheck: 新端口建新 QUIC，发 ADDR_REQ 复核环境
+    EnvCheck --> LiveReq: Observed.IP 未变
+    EnvCheck --> EnvChanged: Observed.IP 已变
     LiveReq --> LiveWait: 收到 LIVE_ACK
     LiveReq --> LiveFailed: LIVE_ERR 或 QUIC 失败
     LiveWait --> LiveDone: 收到有效 SN 并回应 / 超时
     LiveDone --> [*]
     LiveFailed --> [*]
+    EnvChanged --> [*]
 ```
 
 | 状态 | 行为 |
 |------|------|
 | `OldListen` | 旧 conn 已注册 SN 处理器（无活跃 Live transaction 时不回应） |
+| `EnvCheck` | 新 QUIC 连接上发送 `ADDR_REQ` 复核环境（§3.2） |
+| `EnvChanged` | 两次 `Observed.IP` 不同；终止本轮探测，**不** 发送 `LIVE_REQ`，不产生 `MappingAlive` 结果 |
 | `LiveReq` | 新 QUIC stream 发 `LIVE_REQ{Key32, Port0}` |
 | `LiveWait` | 自 `T_ack_live` 起 `LiveWindowMs`（12000ms）内等待服务端 SN |
 | `LiveDone` | 记录 `MappingAlive` 布尔结果 |
@@ -205,7 +221,7 @@ stateDiagram-v2
 
 **超时**：`T_ack_live + 12000 ms` 内未收到有效服务端 SN ⇒ `MappingAlive=false`。
 
-### 3.3 服务端状态机
+### 3.4 服务端状态机
 
 ```mermaid
 stateDiagram-v2
@@ -224,11 +240,11 @@ stateDiagram-v2
 | 步骤 | 说明 |
 |------|------|
 | 目标地址 | `ClientIP` = 新 QUIC 连接源 IP（本次实际观测值，`DEC-0004`）；`Port` = `Port0` |
-| 发送 | 按 §3.4 指数退避 9 次；每次新 SN |
+| 发送 | 按 §3.5 指数退避 9 次；每次新 SN |
 | 停止 | 任一有效客户端 SN（同 `Key32` 验 HMAC 通过）⇒ **立即停止** 后续发送 |
 | 清理 | 停止后或 9 次完成后，状态 **至少保留 4000 ms** 以吸收迟到的客户端回应，然后释放 |
 
-### 3.4 冗余发送参数（`keepalive.md`"服务端操作"节）
+### 3.5 冗余发送参数（`keepalive.md`"服务端操作"节）
 
 | 参数 | 值 |
 |------|-----|
@@ -239,7 +255,7 @@ stateDiagram-v2
 | 客户端等待窗口 | `LiveWindowMs` = 12000 ms |
 | 服务端收尾 | 9 次发完且未收到有效回应后，再保留状态 4000 ms 后释放 transaction 状态（总计约 13500 ms） |
 
-### 3.5 Transaction 标识与去重（`DEC-0009` §4）
+### 3.6 Transaction 标识与去重（`DEC-0009` §4）
 
 | 键 | 组成 | 用途 |
 |----|------|------|
@@ -249,11 +265,11 @@ stateDiagram-v2
 - 服务端 **MUST** 将重复 `LIVE_REQ`（相同 `LiveTxKey` 且前序未完成清理）视为同一 transaction，**MAY** 重发 `LIVE_ACK`，但 **MUST NOT** 因此启动第二个发送循环。
 - 客户端对同一 `Key32` **MUST** 最多触发 **一轮** 3 包回应。
 
-### 3.6 SN 验证
+### 3.7 SN 验证
 
 见 `sn-spec-v1.md` §3.3（服务端→客户端）与 §3.4（客户端→服务端）。
 
-### 3.7 并发与串行
+### 3.8 并发与串行
 
 - **客户端**：**MUST** 等待当前 Live transaction 完成（成功回应或 12s 超时）后，再发起下一次针对同一 `Port0` 的 Live 探测（应用层粗测/精测负责间隔调度，§1.1 `DEC-0002`）。
 - **服务端**：**MAY** 对不同 `Key32` / 不同客户端并行 `LiveSending`；单 `(ClientIP, Port0)` 上未 cleanup 的 transaction 数量上限 **不** 写入协议常量，由服务器实现自行配置（§1.1，`DEC-0002` T1 结论）。
@@ -308,6 +324,7 @@ stateDiagram-v2
 - [ ] Cone：`CONE_ACK` 后关闭 `quic.Conn` 而非 `UDPConn`，`ConeWaitMs` 自关闭动作起算
 - [ ] Cone：`DemuxReady`/`AwaitingAck` 阶段收到的裸 UDP 载荷直接丢弃（无 `PreAckQueue`）
 - [ ] Live：新端口 QUIC + 旧 conn 监听
+- [ ] Live：新 QUIC 连接建立后、发送 `LIVE_REQ` 前，先发 `ADDR_REQ` 做环境验证；`Observed.IP` 变化则终止本轮探测
 - [ ] Live：仅首次有效 SN 触发 3 包回应
 - [ ] Live：同一 `Port0` 不并发 Live transaction
 
