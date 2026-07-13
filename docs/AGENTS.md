@@ -10,15 +10,17 @@
 | 层级 | 目录 | 作者 | 说明 |
 |------|------|------|------|
 | Conception（构想层） | `conception/` | 人工编写（或人类主导） | 设计构想，作者对协议、系统和应用边界的原始设计。 |
-| Decision（决策层） | `decision/` | AI 生成 + 人工审阅 | 架构决策，仅记录 Conception 尚未明确的补充决策（`DEC-NNNN`）。 |
+| Decision（决策层） | `decision/` | AI 生成 + 人工审阅 | 架构决策，记录 Conception 尚未明确或澄清模糊的补充决策。 |
 | Proposal（提案层） | `proposal/` | AI 生成 | 详细技术规格，追溯自 Conception + Decision。 |
 | Plan（方案层） | `plan/` | AI 生成 | 按阶段的实施计划（TDD 任务、包边界、文件清单），追溯自 Proposal。 |
 
 ### 权重关系
 
-**权威顺序**：`Conception` > `Decision` > `Proposal` > `Plan`。
+**权威顺序**：`Conception` + `Decision` > `Proposal` > `Plan`。
 
-如遇冲突以更上层为准，最终以 `Conception` 为准。若发现 `Proposal` 或 `Plan` 与 `Conception` 或 `Decision` 不一致，先修改受影响的 `Conception` 或 `Decision` 文档，再重新生成对应的 `Proposal` 和 `Plan` 文件；不要只修改一个文件而不同步其下游内容。
+如遇冲突以更上层为准，最终以 `Conception` 和 `Decision` 为准。`Decision` 可以是 `Conception` 的细化或模糊 => 明确，但两者不得冲突，否则必须人工介入裁决。
+
+若发现 `Proposal` 或 `Plan` 与 `Conception` 或 `Decision` 不一致，先修改受影响的 `Conception` 或 `Decision` 文档，再重新生成对应的 `Proposal` 和 `Plan` 文件；不要只修改一个文件而不同步其下游内容。
 
 ### 排除目录
 

@@ -31,9 +31,9 @@
 | 1 | 1 | `Version` | 协议版本；v1 固定 `0x01`（对应此前 L-1 决议：单字节宽度） |
 | 2 | 1 | `MsgType` | 消息类型，见下表 |
 | 3 | 4 | `RequestID` | 客户端生成的 `uint32`；请求与对应响应 **MUST** 相同 |
-| 7 | 2 | `PayloadLen` | 后续 Payload 字节数（`uint16`）；**MUST** ≤ `4096` |
+| 7 | 2 | `PayloadLen` | 后续 Payload 字节数（`uint16`）；**MUST** ≤ `4130` （CONE_REQ: 32+2+256×16=4130） |
 
-帧头之后紧跟 `PayloadLen` 字节的 Payload。读取方在 `PayloadLen` 超过 4096、或剩余数据不足 `PayloadLen` 声明的长度时，**MUST** 判定为 `MALFORMED_REQUEST`。
+帧头之后紧跟 `PayloadLen` 字节的 Payload。读取方在 `PayloadLen` 超过 4130、或剩余数据不足 `PayloadLen` 声明的长度时，**MUST** 判定为 `MALFORMED_REQUEST`。
 
 ### 4. `MsgType` 枚举
 
@@ -73,7 +73,7 @@
 |------|-----|
 | `Magic` | `0x53` |
 | `Version` | `0x01` |
-| `MaxPayloadLen` | `4096` |
+| `MaxPayloadLen` | `4130` |
 
 ## 理由
 

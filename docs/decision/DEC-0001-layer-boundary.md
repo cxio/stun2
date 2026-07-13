@@ -116,6 +116,8 @@ Cone 判断矩阵：
 默认归应用层 / 服务网络层（`stun2p`）。PoW 不影响客户端验证 SN。
 例外：如需标准化受托 Notice 消息格式以便不同 `stun2p` 实现互通，可将 Notice 基础字段格式放入协议层，PoW 参数仍放应用层。
 
+**补充**：「Notice 基础字段格式已由 DEC-0005 正式纳入协议层」。
+
 ### 7. Keepalive 探测节奏
 
 协议层只定义单次 `STUN:Live` transaction。以下归应用层：

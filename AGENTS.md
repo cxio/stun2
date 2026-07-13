@@ -4,15 +4,16 @@
 
 设计阶段的 Go 库，**当前仓库尚无 Go 源码**（除 `go.mod`）。实现前必读：
 
-- `docs/conception/conelevel.md` — NAT 公网映射地址获取（`STUN:Addr`） & 类型探测协议（`STUN:Cone`）。
-- `docs/conception/keepalive.md` — NAT 映射存活期探测协议（`STUN:Live`）。
-- `docs/decision/DEC-0001-layer-boundary.md` — 协议层与应用层的边界划分：什么必须由本库实现，什么属于 `cxio/p2p` / `stun2p` 等上层项目。判断"某功能该不该写进本库"时先查此文档。
+- `docs/AGENTS.md` — 文档体系权威说明：四层结构 `Conception` + `Decision` > `Proposal` > `Plan` 的权威顺序、各层维护规则、完整的 `DEC-0001~0009` 与 proposal 清单。改任何文档前先读它。
+- `docs/conception/` — 三份构想文档（人工主导，最高权威）：`pubaddr.md`（`STUN:Addr`，NAT 公网映射地址获取）、`conelevel.md`（`STUN:Cone`，NAT 类型探测）、`keepalive.md`（`STUN:Live`，映射存活期探测）。
+- `docs/decision/DEC-0001-layer-boundary.md` — 协议层与应用层的边界划分：什么必须由本库实现，什么属于 `cxio/p2p` / `stun2p` 等上层项目。判断"某功能该不该写进本库"时先查此文档（其余 `DEC-0002~0009` 主题见 `docs/AGENTS.md` 清单）。
+- `docs/proposal/` — 三份可实施技术规格（AI 生成，权威性低于 Conception/Decision）：`wire-spec-v1.md`（控制面帧/WireAddr/Payload）、`sn-spec-v1.md`（SN 二进制布局/HMAC）、`transaction-spec-v1.md`（三原语状态机/冗余时序/去重/NAT 类型语义）。实现时先读对应 proposal，再回溯 decision/conception。
 - `MEMORY.md` — 已确认的设计要点（quic-go UDPConn 复用机制成立、keepalive 探测节奏由客户端主导、协议层/应用层区分见 DEC-0001）。
 
-实现新功能时，先以两份 conception 文档为准；文档与代码冲突时以**已审定的文档**为准（提交历史显示文档经过多轮 AI 评审修订）。若新功能在 `conelevel.md` 或 `keepalive.md` 中没有明确覆盖，先停止并生成或更新对应的 `docs/decision/` 说明，再继续实现；不得凭直觉补全未定义行为。
+实现新功能时，先以 conception + decision 文档为准；文档与代码冲突时以**已审定的文档**为准（提交历史显示文档经过多轮 AI 评审修订）。若新功能在 conception 中没有明确覆盖，先停止并生成或更新对应的 `docs/decision/` 说明，再继续实现；不得凭直觉补全未定义行为。
 
 - module: `github.com/cxio/stun2`，Go `1.26.2`。
-- `docs/plan/`、`docs/proposal/` 目前为空，是预留目录；`docs/decision/` 已含 `DEC-0001`。
+- `docs/plan/` 目前为空（预留目录，由 proposal 转化的阶段化实施计划将放此）。
 
 
 ## 关键架构约束（容易做错）
@@ -45,7 +46,7 @@ SN = Rnd16 + HMAC_SHA256(Key32, Rnd16 + LocalIP + TmpN) + TmpN
 
 ### 冗余发送 & 超时（两套协议不同）
 
-**Cone**（`conelevel.md:§.消息发送；§.客户端超时`）：服务端发 **3** 次，间隔 `100~300ms, 400~800ms`，累计 `0.5~1.1s`；客户端超时 **5 秒**。
+**Cone**（`conelevel.md:§.消息发送；§.客户端超时`）：**NewPort** 发 **5** 次、间隔 `100~400ms` 随机；**NewHost** 发 **3** 次、间隔 `100~300ms; 400~800ms` 区段随机；客户端超时 **5 秒**（一个包都没收到即失败）。NewPort/NewHost 双路并发，统一超时计时。
 
 **Keepalive**（`keepalive.md:§.服务端操作；§.探测循环`）：服务端发 **9** 次，间隔 `100, 200, 400, 800, 1600, 1600, 1600, 1600, 1600ms`，累计约 `9.5s`；客户端超时 **12 秒**。
 
