@@ -67,9 +67,9 @@
 | 1 | 1 | `Version` | 协议版本；v1 固定 `0x01` |
 | 2 | 1 | `MsgType` | 消息类型，见 §2.2 |
 | 3 | 4 | `RequestID` | 客户端生成的 uint32；请求与对应响应 **MUST** 相同 |
-| 7 | 2 | `PayloadLen` | 后续 Payload 字节数；**MUST** ≤ 4096 |
+| 7 | 2 | `PayloadLen` | 后续 Payload 字节数；**MUST** ≤ 4130 |
 
-帧头之后紧跟 `PayloadLen` 字节的 Payload。读取方 **MUST** 在 `PayloadLen` 超过 4096 或剩余数据不足时判定为 `MALFORMED_REQUEST`。
+帧头之后紧跟 `PayloadLen` 字节的 Payload。读取方 **MUST** 在 `PayloadLen` 超过 4130 或剩余数据不足时判定为 `MALFORMED_REQUEST`。
 
 ### 2.2 `MsgType` 枚举
 
@@ -223,7 +223,7 @@
 |------|-----|------|
 | `Magic` | `0x53` | `DEC-0007` |
 | `Version` | `0x01` | `DEC-0007` |
-| `MaxPayloadLen` | 4096 | `DEC-0007` |
+| `MaxPayloadLen` | 4130 | `DEC-0007` |
 | `MaxExclistEntries` | 256 | `DEC-0006` |
 | `MaxAppIDLen` | 64 | `DEC-0005` |
 | `MaxAppDataLen` | 1024 | `DEC-0005` |
