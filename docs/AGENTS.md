@@ -9,10 +9,10 @@
 
 | 层级 | 目录 | 作者 | 说明 |
 |------|------|------|------|
-| Conception（构想层） | `conception/` | 人工编写（或人类主导） | 设计构想，作者对协议、系统和应用边界的原始设计。 |
-| Decision（决策层） | `decision/` | AI 生成 + 人工审阅 | 架构决策，记录 Conception 尚未明确或澄清模糊的补充决策。 |
-| Proposal（提案层） | `proposal/` | AI 生成 | 详细技术规格，追溯自 Conception + Decision。 |
-| Plan（方案层） | `plan/` | AI 生成 | 按阶段的实施计划（TDD 任务、包边界、文件清单），追溯自 Proposal。 |
+| Conception（构想层） | `conception/` | 人工 + AI 辅助 | 设计构想，作者对协议、系统和应用边界的原始设计。 |
+| Decision（决策层） | `decision/` | 人与 AI 互助思考 | 架构决策，记录 Conception 尚未明确或澄清模糊的补充决策。 |
+| Proposal（提案层） | `proposal/` | AI 生成 + 人工审阅 | 详细技术规格，追溯自 Conception + Decision。 |
+| Plan（方案层） | `plan/` | AI 生成 + 人工浏览 | 按阶段的实施计划（TDD 任务、包边界、文件清单），追溯自 Proposal。 |
 
 ### 权重关系
 
@@ -38,28 +38,30 @@
 
 位于 `conception/` 目录下，包含以下内容：
 
-| 功能 | 设计构想文件 |
-|------|-------------|
-| NAT 地址探测（`STUN:Addr`） | `pubaddr.md` |
-| NAT 类型探测（`STUN:Cone`） | `conelevel.md` |
-| NAT 存活期探测（`STUN:Live`） | `keepalive.md` |
+| 功能 | 文件 |   简要说明   |
+|------|-------------|-------------|
+| NAT 地址探测 | `pubaddr.md` | 向服务器发送 `STUN:Addr` 请求，获得自身公网地址，最简单基础服务。 |
+| NAT 类型探测 | `conelevel.md` | 向服务器请求 `STUN:Cone` 服务，探知自己的 NAT Cone 类型，每个协作服务器最多发送**3**个探测包。 |
+| NAT 存活期探测 | `keepalive.md` | 向服务器请求 `STUN:Live` 服务，测试自己 NAT 映射的生命期，单轮最多**9**个消息包发送。 |
 
 
 ## 架构决策（Decision）
 
-位于 `decision/` 目录。Decision 的作用是补充 Conception 尚未直接固定的规范化细节，例如字节编码、极端边界、字段宽度和实现路径等。
+位于 `decision/` 目录。Decision 的作用是补充 Conception 未直接固定的必要规则，如方向选择、边界划分、实现路径等关键决策。
+不涉及详细的技术规格，其地位/范围是：如果没有这些决策，技术规格部分（Proposal）将无法进行。
+
+文档内容基本上遵循如下结构：
+
+- 背景 （Context）
+- 决策 （Decision）
+- 理由 （Rationale）
+- 影响 （Consequences）
+- 构想层依据 （Conception References）
+- 开放问题 （Open Questions）
 
 | 编号 | 文件 | 覆盖主题 |
 |------|------|---------|
-| `DEC-0001` | `decision/DEC-0001-layer-boundary.md` | 协议层与应用层的边界划分 |
-| `DEC-0002` | `decision/DEC-0002-transaction-concurrency.md` | `STUN:Cone`/`STUN:Live` 同一 `UDPConn` 上的并发约束、禁止按远端 IP 区分 transaction |
-| `DEC-0003` | `decision/DEC-0003-cone-closure-and-cleanup.md` | Cone 关闭握手机制（QUIC 关闭事件）、服务端独立等待超时与资源释放 |
-| `DEC-0004` | `decision/DEC-0004-live-localip-binding.md` | Keepalive SN 中 `LocalIP` 取值来源、服务端多归属绑定建议 |
-| `DEC-0005` | `decision/DEC-0005-newhost-notice-format.md` | `NewHost` 受托 `Notice` 消息字段格式（含 `AppID`/`AppData` 扩展） |
-| `DEC-0006` | `decision/DEC-0006-exclist-upper-bound.md` | `Exclist` 容量上限固定为 256，不做协商 |
-| `DEC-0007` | `decision/DEC-0007-control-frame-format.md` | 控制面帧格式（帧头、`MsgType`、错误码结构）、QUIC 传输模型、字节序 |
-| `DEC-0008` | `decision/DEC-0008-wire-address-format.md` | 控制消息中 `IP:Port` 的 `WireAddr` 定长编码 |
-| `DEC-0009` | `decision/DEC-0009-service-payload-encoding.md` | `STUN:Addr`/`STUN:Cone`/`STUN:Live` 各请求/响应 Payload 字段编码、Live 去重规则 |
+| （待更新） | （待更新） | （待更新） |
 
 维护规则：
 
@@ -71,14 +73,20 @@
 
 ## 技术提案（Proposal）
 
-位于 `proposal/` 目录，由 Conception + Decision 重新生成的可实施技术规格。
-每篇含「来源追溯」「规格正文」「边界与限制」「待决问题」「对 Plan 的约束」。
+位于 `proposal/` 目录，由 Conception + Decision 生成的可实施技术规格（Spec），如字节编码、字段宽度、实现的详细规则等。
+
+文档内容大致遵循如下结构：
+
+- 来源追溯
+- 概述
+- 规格正文
+- 边界与限制
+- 待决问题
+- 对 Plan 的约束
 
 | 编号 | 文件 | 覆盖主题 |
 |------|------|------|
-| v1 | `proposal/wire-spec-v1.md` | 控制面帧格式、`WireAddr`、三原语 Payload、Notice 消息、错误码 |
-| v1 | `proposal/sn-spec-v1.md` | 探测面 SN 二进制布局、位规则、HMAC 构造与验证、`LocalIP` |
-| v1 | `proposal/transaction-spec-v1.md` | `STUN:Addr` / `STUN:Cone` / `STUN:Live` 状态机、竞态、冗余发送时序、去重、NAT 类型结果语义 |
+| （待更新） | （待更新） | （待更新） |
 
 维护规则：
 
@@ -90,7 +98,14 @@
 ## 实施方案（Plan）
 
 位于 `plan/` 目录，由 Proposal 转化的阶段化实施计划。与 Proposal 章节、代码包、实施阶段对齐。
-每篇含「来源提案」「包边界」「建议文件」「TDD Task」「阶段门禁/验收」。
+
+文档内容大致遵循如下结构：
+
+- 来源提案
+- 包边界/非目标
+- 建议文件
+- TDD Task
+- 阶段验收/门禁
 
 | 文件 | 覆盖 Proposal | 对应包（层） |
 |------|---------------|-------------|
