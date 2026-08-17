@@ -13,7 +13,7 @@
 
 > **特别提示：**
 > QUIC 协议要求声明 ALPN，本设计使用标准名称 `h3` 以避免特征。
-> 服务器对本协议的辨识采用首包（ClientHello）工作量认证的方式，参考项目 [stun2p](github.com/cxio/stun2p)。
+> 服务器对本协议的辨识采用首包（ClientHello）工作量认证的方式，参考项目 [stun2p](github.com/cxio/stun2p)，[wTLS](github.com/cxio/wtls)。
 
 
 ## 准备
@@ -61,6 +61,8 @@
 > **应用提示：**
 > 客户端可并发尝试探测以提高结果的可靠性。
 > 如果并发，注意彼此的 IP 需要添加到排除清单（`Exclist`，见下文）中。
+>
+> 注意需用不同的端口创建 UDPConn 监听，否则 `SN` 无法区分。
 
 
 ### 准备
@@ -77,17 +79,19 @@
 
 - Version: 版本号（初始值 1）。
 - Key32:   会话密钥（随机**32**字节），用于构建会话标识（`SN`）。
-- Exclist: 排除清单，包含节点自己近期（比如半小时）曾经连接过的远端服务器IP。
+- Exclist: 排除清单，包含节点自己近期（比如半小时）曾经连接过的远端服务器IP（**注意**：不含当前目标服务器）。
 
 > **解释：**
 > `NewHost` 消息需要一个近期未曾与客户端连接过的新IP，因此需要排除清单 `Exclist`。
 > 半个小时的时间窗口已经足够，因为没有哪个 NAT 映射会闲置这么久而不关闭。
 
-同时，客户端会通过 QUIC 的 `Transport.ReadNonQUICPacket()` 监听并读取远端的探测回包（*NewPort/NewHost*）。
+注意，客户端需提前通过 QUIC 的 `Transport.ReadNonQUICPacket()` 监听远端的探测回包（*NewPort/NewHost*）。
 
 > **应用提示：**
-> 如果客户端提交过大的 Exclist，服务器可能拒绝为其服务。
+> 如果客户端提交过大的 Exclist（超过**100**条），服务器可能拒绝为其服务。
 > 作为一种良好的实践，客户端应当在初始上线时即请求 NAT 探测服务。
+>
+> 另外实现可能需注意 QUIC 中裸 UDP 数据包队列满后（或业务阻塞）被静默丢弃的问题。
 
 
 ### 会话标识
@@ -99,20 +103,25 @@
 ```go
 // Rnd16: 16字节随机序列。
 // Rnd16[0]: 首字节高两位置零，标识非 QUIC 数据包。
-// Rnd16[0]: 首字节的低1位用于标记消息发送源（服务端）：
-// - 0: NewPort 同机新端口发送
-// - 1: NewHost 新主机发送
-// source: NewPort || NewHost
+// Rnd16[0]: 首字节的低2位用于标记消息源（服务端）：
+// - 0：Passage 通路探测
+// - 1: NewPort 同机新端口发送
+// - 2: NewHost 新主机发送
+// source: Passage, NewPort, NewHost
 // 位模式：
-// （bit7=0 / bit6=0 / bit5..bit1=随机 / bit0=source）
-Rnd16[0] = Rnd16[0] & 0x3E | source
+// - bit7=0 / bit6=0 => QUIC 裸 UDP 标志
+// - bit5..bit2 => 随机
+// - bit1=0 / bit0=0 => Passage
+// - bit1=0 / bit0=1 => NewPort
+// - bit1=1 / bit0=0 => NewHost
+Rnd16[0] = Rnd16[0] & 0x3C | source
 
 // 服务端构造。
 // domainTag: 域标签 "STUN:Cone"
 // Key: 会话密钥（Key32）或会话密钥封装（见后）。
 // TmpN: 变长随机字节序列，用于隐藏 SN 的长度特征。长度：16 ~ 1024
 // 前段固定 16 + 32 = 48 字节。
-SN = Rnd16 + HMAC_SHA256(Key, domainTag || Rnd16 || TmpN) || TmpN
+SN = Rnd16 || HMAC_SHA256(Key, domainTag || Rnd16 || TmpN) || TmpN
 ```
 
 > **设计：**
@@ -134,9 +143,12 @@ SN = Rnd16 + HMAC_SHA256(Key, domainTag || Rnd16 || TmpN) || TmpN
 1. 在 QUIC 连接上回应确认。
 2. 在 QUIC 底层 UDP 链路上发送**2**个裸 UDP 包（*通路探测*，端口不变），确认纯 UDP 可以通行。
 
-如果客户端收到裸 UDP 数据包，即确认网络允许纯 UDP 通讯。否则测试无法进行，客户端可能需要再向不同的服务节点尝试，确认是否为自己网络的问题。
+通路探测的数据包依然为 `SN`，如果客户端收到数据包，即确认网络允许纯 UDP 通讯。否则测试无法进行，客户端可能需要再向不同的服务节点尝试，确认是否为自己网络的问题。
 
-假设客户端收到裸 UDP 数据包：向服务器发送确认（QUIC） => 服务器收到确认后：
+> **设计：**
+> 通路探测的数据包「客户端/服务器」超时为**4/6**秒，不可配置。
+
+如果客户端超时未收到数据包，在 QUIC 上通知服务端并关闭连接。否则向服务器发送通行确认，服务器收到确认后：
 
 - `NewPort`: 用一个新的随机端口向客户端发送消息：数量**4**个，间隔时间 `100ms ~ 400ms` 随机选取。
 - `NewHost`: 从本机的另一个新IP或请求另一个服务器（∉ Exclist）向客户端发送消息：数量**3**个，间隔时间 `100ms ~ 500ms` 随机取值。
@@ -147,7 +159,7 @@ NewPort 和 NewHost 可以双路并发，两者不冲突。
 > 服务器端使用的新 IP 需要与原连接的IP同簇（同为 IPv4 或 IPv6）。
 > 如果源服务器是从本机的一个新IP发送 `NewHost`，Key = `SHA256(Key32)`。
 
-一个源服务器通常需要委托 2~3 个受托服务器发送探测包。标准数量为**3**。
+一个源服务器通常需要委托 2~3 个受托服务器发送探测包。标准数量为**3**。源服务器会告知客户端具体的委托数量，这是一种友好的交互。
 
 
 #### 受托服务器
@@ -157,10 +169,21 @@ NewPort 和 NewHost 可以双路并发，两者不冲突。
 如果受托服务器愿意协助发包，为防止恶意委托（DDoS 放大），受托服务器会生成一个随机的挑战种子，回应并要求源服务器完成工作量计算（算法 `Equi-X`）：
 
 ```go
+// 受托服务器生成挑战种子：
+// @DelegateKey 委托服务器密钥（启动后随机生成）
+// @ServAddr 源服务器地址（IP:Port）
+// @Timepart 当前时间片，2分钟长度
+// Timepart = (Now / 120) * 120
+challengeSeed = HMAC_SHA256(DelegateKey, ServAddr || Timepart)
+
+// 源服务器计算工作量：
+// 将受托目标地址包含进工作量锁定。
 // @challengeSeed 受托服务器挑战种子，32字节
-// @nonce 生成解的一个随机数
+// @Address 委托目标地址（接收探测包）
+// @KeyHash 会话密钥封装（SHA256(Key32)）
+// @nonce 内部生成解的一个随机数，返回用于验证
 // @solution 工作量的一个解，16字节（2*8）
-solution, nonce, err := equix.Solve(challengeSeed)
+solution, nonce, err := equix.Solve(challengeSeed || Address || KeyHash)
 ```
 
 源服务器完成工作量挑战，然后向受托服务器提供客户端信息及工作量解：
@@ -172,13 +195,30 @@ solution, nonce, err := equix.Solve(challengeSeed)
 - nonce: 配合工作量解的一个随机数。
 - AppInfo: 应用信息，可选。可用于区分支持此协作的不同应用实现。
 
-受托服务器验证工作量解 => 配合执行 `NewHost` 操作：
+受托服务器验证工作量解：
+
+```go
+// 即时计算挑战种子
+// @ServAddr 从连接中提取对端地址
+// @Timepart 即时计算时间片（容差内相同）
+challengeSeed := HMAC_SHA256(DelegateKey, ServAddr || Timepart)
+
+// 提取源服务器发送的数据
+// 验证工作量：受托目标地址和密钥都已锁定
+return equix.Verify(challengeSeed || Address || KeyHash, solution, nonce)
+```
+
+如果验证通过，受托服务器配合执行 `NewHost` 操作：
 
 - 向目标客户端（`Address`）发送裸 UDP 探测包，数据负载为相同规则构造的 `SN`。
 - 探测包数量**3**个，间隔时间 `100ms ~ 500ms` 随机取值。`SN` 各自构造。
 
 > **提示：**
 > 源服务器与受托服务器之间通常也是安全连接（QUIC）。
+
+> **实现：**
+> 受托服务器应当维护一个探测目标地址缓存，地址有效期为时间片长度（2分钟）。
+> 发送探测包/验证工作量前，缓存命中的目标地址不再处理（静默忽略）。
 
 
 #### 客户端超时
@@ -196,13 +236,49 @@ solution, nonce, err := equix.Solve(challengeSeed)
 如果客户端收到探测包（`SN`）：提取发送源（`NewPort`|`NewHost`），并根据规则验证其有效性。
 
 ```go
+// 注意 NAT64 环境下服务端 IPv4 的表示法，
+// 客户端可能需要从返回的 IPv6 形式中提取出 IPv4 地址，
+// 或者都采用 IPv6 形式（进行比较）。
+ServIP      // 源服务器IP
+ServPort    // 源服务器端口
+SourceIP    // 从连接读取远端发送者IP
+SourcePort  // 从连接读取远端发送者端口
+```
+
+```go
+// 是否 NewHost 来源
+newHost := SN[0] & 0x3 == 2
+
+// 预防性排除源服务器作假
+if newHost && SourceIP == ServIP {
+    return false
+}
+```
+
+```go
+// 是否 NewPort 来源
+newPort := SN[0] & 0x3 == 1
+
+// 虚假/问题 NewPort
+if newPort && (ServPort == SourcePort || SourceIP != ServIP) {
+    return false
+}
+```
+
+```go
+// 源服务器可能忽略 Exclist
+// NewHost | NewPort 都不允许
+// 注意：Exclist 中不能包含源服务器IP本身。
+if SourceIP ∈ Exclist {
+    return false
+}
+```
+
+```go
 // SN 解构
 Rnd16 := SN[:16]
 TmpN  := SN[48:]
 Hash  := SN[16:48]
-
-// 是否 NewHost 来源
-newHost := SN[0] & 0x1 != 0
 
 // Key32 客户端生成&保留
 Key := Key32
@@ -217,10 +293,8 @@ return Hash == HMAC_SHA256(Key, domainTag || Rnd16 || TmpN)
 在本设计中，每个受托服务器的发包数都很节制（3个），且历时很短（可能 2~3s），故不设计客户端回应。
 
 > **局限：**
-> NAT 内网节点无法得知 UDP 消息发送者的原始 IP，无法排除源服务器作恶（假 NewHost）。
-> 因此只能基于对源服务器的*信任*模型，客户端需要通过*尝试多个不同的服务器请求服务*，并综合权衡。
->
-> 如果 STUN 服务用于区块链环境，代币激励可能能够鼓励节点的诚实行为（详见 [Evidcoin](github.com/cxio/Evidcoin)）。
+> 本设计基于对源服务器的*基本信任*模型，客户端应当通过*尝试多个不同的服务器请求服务*，并综合权衡。
+> 如果 STUN 服务用于区块链环境，代币激励可能有助于节点的诚实行为（详见 [Evidcoin](github.com/cxio/Evidcoin)）。
 
 
 ### 综合判断（Step.4）

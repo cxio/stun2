@@ -42,7 +42,7 @@
 |------|-------------|-------------|
 | NAT 地址探测 | `pubaddr.md` | 向服务器发送 `STUN:Addr` 请求，获得自身公网地址，最简单基础服务。 |
 | NAT 类型探测 | `conelevel.md` | 向服务器请求 `STUN:Cone` 服务，探知自己的 NAT Cone 类型，每个协作服务器最多发送**3**个探测包。 |
-| NAT 存活期探测 | `keepalive.md` | 向服务器请求 `STUN:Live` 服务，测试自己 NAT 映射的生命期，单轮最多**9**个消息包发送。 |
+| NAT 存活期探测 | `keepalive.md` | 向服务器请求 `STUN:Live` 服务（含 `STUN:Live.Port`），测试自己 NAT 映射的生命期，单轮最多**9**个消息包发送。 |
 
 
 ## 架构决策（Decision）

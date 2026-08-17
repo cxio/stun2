@@ -8,7 +8,7 @@ STUN2：NAT 映射类型与存活期探测库（Go 模块 `github.com/cxio/stun2
 
 - `pubaddr.md` — `STUN:Addr` 公网地址获取
 - `conelevel.md` — `STUN:Cone` NAT 类型探测
-- `keepalive.md` — `STUN:Live` NAT 映射存活期探测
+- `keepalive.md` — `STUN:Live.Port/STUN:Live` NAT 映射存活期探测
 
 项目目前处于设计阶段：`docs/decision/`、`docs/proposal/`、`docs/plan/` 尚为空（git 不跟踪空目录，克隆后需自建），代码未开始编写。
 
@@ -30,7 +30,7 @@ STUN2：NAT 映射类型与存活期探测库（Go 模块 `github.com/cxio/stun2
 - QUIC ALPN 统一使用标准名 `h3`（避免协议特征）；服务器对协议的辨识采用首包（ClientHello）工作量认证（Equi-X）。
 - 地址统一为 IPv6 格式，IPv4 采用 IPv4-mapped 编码（`::ffff:IPv4`）。
 - 裸 UDP 探测包为会话标识 SN：`Rnd16[0]` 高两位置零以标识非 QUIC 包；每个 SN 均即时构建、互不相同。
-- 协议默认常量（可配置）：Cone 每台协作服务器发包上限 3 个、客户端超时 7s；Live 单轮发包上限 9 个、客户端超时 12s、Validation 有效期 90 分钟、粗测起始间隔 15s。
+- 协议默认常量（可配置）：Cone 每台协作服务器发包上限 3 个、客户端超时 7s；Live 单轮发包上限 9 个、客户端超时 12s、Validation 有效期不超过 20 分钟、粗测起始间隔 2 分钟（可配置）。
 
 ## 命令
 
@@ -46,4 +46,4 @@ go test ./...
 ## 约定
 
 - 文档与代码注释使用中文；标识符、日志、错误消息沿用英文。
-- 协议域标签沿用文档中的既有命名（`STUN:Addr`、`STUN:Cone`、`STUN:Live`、`STUN:Live.0`、`STUN:LiveDone`），不得自创变体。
+- 协议域标签沿用文档中的既有命名（`STUN:Addr`、`STUN:Cone`、`STUN:Live`、`STUN:Live.Port`、`Server@STUN:Live`、`Client@STUN:Live`），不得自创变体。
