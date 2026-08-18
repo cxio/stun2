@@ -26,11 +26,12 @@ STUN2：NAT 映射类型与存活期探测库（Go 模块 `github.com/cxio/stun2
 以下为三篇构想文档中分散但容易违反的跨切面不变量：
 
 - 核心依赖 quic-go 的「同一 UDPConn 复用 QUIC + 裸 UDP」机制（`quic.Transport{Conn: udpConn}`、`Transport.ReadNonQUICPacket()`），可行性已评审确认（见 `MEMORY.md`）。
-- 客户端探测 Socket 必须用 `net.ListenUDP`（未连接 Socket），不可用 `net.DialUDP`——未知 IP 的探测回包会被系统丢弃。
-- QUIC ALPN 统一使用标准名 `h3`（避免协议特征）；服务器对协议的辨识采用首包（ClientHello）工作量认证（Equi-X）。
+- 客户端 `STUN:Cone` 探测用 Socket 必须用 `net.ListenUDP`（未连接 Socket），不可用 `net.DialUDP`——未知 IP 的探测回包会被系统丢弃。`STUN:Addr` 无此限制（`DialUDP`/`ListenUDP` 均可）。
+- QUIC ALPN 统一使用标准名 `h3`（避免协议特征）；服务器对协议的辨识采用首包（ClientHello）工作量认证（Equi-X）。这属于上层应用行为。
 - 地址统一为 IPv6 格式，IPv4 采用 IPv4-mapped 编码（`::ffff:IPv4`）。
-- 裸 UDP 探测包为会话标识 SN：`Rnd16[0]` 高两位置零以标识非 QUIC 包；每个 SN 均即时构建、互不相同。
-- 协议默认常量（可配置）：Cone 每台协作服务器发包上限 3 个、客户端超时 7s；Live 单轮发包上限 9 个、客户端超时 12s、Validation 有效期不超过 20 分钟、粗测起始间隔 2 分钟（可配置）。
+- 裸 UDP 探测包为会话标识 SN：`Rnd16[0]` 高两位置零以标识非 QUIC 包；Cone 中低 2 位另用于标记消息源（`Rnd16[0] & 0x3C | source`），Live 则保留低 6 位（`& 0x3F`）。每个 SN 均即时构建、互不相同。
+- 协议默认常量（除注明外均可配置）：Cone 每台协作服务器发包上限 3、客户端超时 7s；Live 单轮发包上限 9、客户端超时 12s、Validation 有效期上限 40 分钟。粗测起始间隔无固定默认值，由用户按网络环境配置。
+- 例外：Cone 通路探测超时 4/6s（客户端/服务端）不可配置，是少数硬编码常量之一。
 
 ## 命令
 
