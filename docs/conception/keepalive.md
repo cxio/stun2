@@ -51,7 +51,8 @@ return Hash == HMAC_SHA256(Key32, domainTag || Rnd16 || TmpN)
 
 然后客户端向服务器发送预探测请求 `STUN:Live.Port`，包含数据：
 
-- `Distance`: 初始时间窗口，含初始间隔时间 + 适当余量。余量**2~3**分钟即可。
+- Version:  版本号（初始值 1）。
+- Distance: 初始时间窗口（秒数），含初始间隔时间 + 适当余量。余量**2~3**分钟即可。
 
 服务器收到请求后，返回响应：
 
@@ -77,8 +78,8 @@ Validation := Timestamp || HMAC_SHA256( BaseKey, domainTag || ClientAddr.IP || C
 
 确认自己处于 NAT 内之后：
 
-- 暂存获取到的自己的公网地址 `ClientAddr`（`IP.0`, `Port.0`）。
-- 暂存服务端派发的批准证明 `Validation`，后续需要此批条证明所发端口为 `Port.0`。
+- 暂存获取到的自己的公网地址 `ClientAddr`。
+- 暂存服务端派发的批准证明 `Validation`，后续需要此批条证明目标地址。
 
 
 ## 正式探测
@@ -95,38 +96,31 @@ Validation := Timestamp || HMAC_SHA256( BaseKey, domainTag || ClientAddr.IP || C
 
 客户端关闭 QUIC 连接之后，即记录首次*探测间隔*的起始时间 `Time.0`。
 
-**注意**：旧链路从 `Time.0` 起必须完全静默，包括客户端和服务器双方，避免残留的 Transport 可能回 Stateless Reset 而续活映射。
+> **注意：**
+> 旧链路从 `Time.0` 起必须完全静默，包括客户端和服务器双方，避免残留的 Transport 可能回 Stateless Reset 而续活映射。
 
 > **设计：**
 > 与传统探测不同，本设计中延时不由服务器控制，客户端掌控所有探测节奏。服务器简单响应即可。
 > 这简化了服务器端的逻辑（基本无状态），也让客户端更灵活，可自由控制精度。
+>
+> 另外，探测流程不要求控制通道（QUIC）与被探测映射相同公网 IP。控制连接断开即丢弃本轮，不把上次成功间隔记为存活期；若要继续，从「*预探测：创建 NAT 映射*」重新开始。
+
+最后，客户端在 `ClientAddr.Port` 上启动（或继续）侦听。注意侦听是复用旧的 Socket 继续读，而非新建绑定。
 
 
-### Step.2 预环境验证
+### Step.2 请求服务
 
-为强化可靠性，避免客户端在环境迁移后做无效探测，应先执行预环境验证。此验证在预设的间隔时间到达之前执行（如**5**秒，可配置）。
-
-客户端在新的 QUIC 连接上发送 `STUN:Addr` 请求，服务器响应之后，客户端提取 IP，与之前暂存的 `IP.0` 对比核实：
-
-- **相同**：说明外部网络环境没有改变，继续执行后续流程。
-- **不同**：说明外部网络环境已经改变，此次探测流程结束。如需继续，应从「*预探测：创建 NAT 映射*」重新开始。
-
-如果预环境验证通过，客户端即在 `Port.0` 上启动（或继续）侦听。**注意**侦听是复用旧的 Socket 继续读，而非新建绑定。
-
-
-### Step.3 请求服务
-
-当预设的间隔时间到达后，客户端在新的 QUIC 连接上向服务器发送 `STUN:Live` 请求：
+当预设的间隔时间到达后，客户端即在新的 QUIC 连接上向服务器发送 `STUN:Live` 请求：
 
 - Version:    版本号（初始值 1）。
 - Key32:      即时生成的会话密钥，32字节随机序列。**注**：每次都不同。
-- Port:       纯 UDP 连接上的旧端口号（即之前暂存的 `Port.0`）。
-- Distance:   新的时间窗口大小。即至下一次 `STUN:Live` 请求前的时长 + 余量。
+- Address:    纯 UDP 连接上的旧地址（即之前暂存的 `ClientAddr`）。
+- Distance:   新的时间窗口大小（秒数）。即至下一次 `STUN:Live` 请求前的时长 + 余量。
 - Validation: 之前暂存的服务器派发的批准证明。
 
 > **注**：服务器收到请求后的操作见 [下文](#服务端)。
 
-客户端在 `Port.0` 上侦听，收到服务器发送的探测包（`SN`）后，验证并回应：
+客户端在 `ClientAddr.Port` 上侦听，收到服务器发送的探测包（`SN`）后，验证并回应：
 
 - 回应数据包也为即时构建的 `SN`。
 - 收到一个回应一个（最多8个），同时更新*探测间隔*的起始时间 `Time.0`。
@@ -139,10 +133,10 @@ Validation := Timestamp || HMAC_SHA256( BaseKey, domainTag || ClientAddr.IP || C
 
 #### 状态判断
 
-对于客户端在 `Port.0` 上的侦听来说：
+对于客户端在 `ClientAddr.Port` 上的侦听来说：
 
 - 如果收到探测包，表示映射没有改变，原映射端口依然有效。
-- 以新收到 Validation 时为起点，如果**10**秒超时（可配置）没有收到探测包，则表示映射已经改变，探测不可达。
+- 以新收到 Validation 时为起点，如果**10**秒超时（*不可配置*）没有收到探测包，则表示映射已经改变，探测不可达。
 
 
 ## 服务端
@@ -151,14 +145,14 @@ Validation := Timestamp || HMAC_SHA256( BaseKey, domainTag || ClientAddr.IP || C
 
 - 验证其 `Validation` 的有效性。
 - 根据客户端的 `Distance` 申请，重新创建 `Validation`（最长不超过**45**分钟）并返回给客户端。
-- 构造目标地址 `clientIP:Port`，发送探测包（`SN`）。`clientIP` 从底层连接中提取。
+- 向目标地址 `Address`，发送探测包（`SN` 即时构建）。
 
 **注意**：探测包需从 quic.Listener 的同一**IP:Port**发出。
 
-**约束**：同一客户端地址（IP:Port）的 STUN:Live 请求最小间隔为 `10s`（不可配置），避免频繁请求消耗服务器资源。
+**约束**：同一客户端地址（IP:Port）的 STUN:Live 请求最小间隔为 `10s`（*不可配置*），避免频繁请求消耗服务器资源。
 
 
-### 验证 Validation 和 Port
+### 验证 Validation 和 Address
 
 ```go
 // 提取时间戳
@@ -172,9 +166,9 @@ if Now.Timestamp > Decode(Timestamp) {
 Valid32 := Validation[len(Timestamp):]
 
 // 目标是否合法：
-// clientIP: 远端公网 IP
-// Port: 客户端发送过来的目标端口
-return Valid32 == HMAC_SHA256(BaseKey, domainTag || clientIP || Port || Timestamp)
+// @domainTag: STUN:Live.Port
+// Address 客户端传递来的目标地址
+return Valid32 == HMAC_SHA256(BaseKey, domainTag || Address.IP || Address.Port || Timestamp)
 ```
 
 
@@ -186,7 +180,8 @@ Expire := Now.Timestamp + Distance
 Timestamp := Encode( Expire )
 
 // 新的有效期证明
-Validation := Timestamp || HMAC_SHA256( BaseKey, domainTag || clientIP || Port || Timestamp )
+// @domainTag: STUN:Live.Port
+Validation := Timestamp || HMAC_SHA256( BaseKey, domainTag || Address.IP || Address.Port || Timestamp )
 ```
 
 服务器在 QUIC 连接上将更新后的 `Validation` 发给客户端，然后在纯 UDP 链路上发送 `SN`……直到收到客户端回应或冗余发送结束。
@@ -215,13 +210,13 @@ Validation := Timestamp || HMAC_SHA256( BaseKey, domainTag || clientIP || Port |
 
 ## 探测循环（客户端 <=> 服务器）
 
-在一个探测周期内（同一轮），客户端需多次向服务器请求 `STUN:Live` 探测，每次从 **§.Step.2 预环境验证** 开始。
+在一个探测周期内（同一轮），客户端需多次向服务器请求 `STUN:Live` 探测，每次从 **§.Step.2 请求服务** 开始。
 
-客户端在 `Port.0` 上侦听探测包，如果直到超时没有收到服务器的探测包，即可*终止*本轮探测。上一次成功交互的探测间隔时间即为有效。
+客户端在 `ClientAddr.Port` 上侦听探测包，如果直到超时没有收到服务器的探测包，即可*终止*本轮探测。上一次成功交互的探测间隔时间即为有效。这与控制连接断开不同：后者不产出存活期。
 
 服务端如果未收到客户端的*结束发送*通知回包，则发送完 8 次后自然结束（无超时）。
 
-在完整一轮探测结束之后（超时终止），客户端可能需要重新开始新一轮测试，这需要从 `§.预探测：创建 NAT 映射` 开始。
+在完整一轮探测结束之后（映射探测超时，或控制连接断开），客户端可能需要重新开始新一轮测试，这需要从 `§.预探测：创建 NAT 映射` 开始。
 
 
 ### 附：探测原理
@@ -366,7 +361,7 @@ End => 270s         // 精度已完成：|-3.75| < 5
 
 粗测和精测是可以分离的两个独立的探测周期（从 *§.预探测：创建 NAT 映射* 开始），可以不必在同一服务器上进行。
 
-实际上，探测全程由客户端主导，服务器只需根据请求提供响应即可（`STUN:Live.Port`、`STUN:Addr` 和 `STUN:Live`）。
+实际上，探测全程由客户端主导，服务器只需根据请求提供响应即可（`STUN:Live.Port` 和 `STUN:Live`）。
 
 
 ### 配置

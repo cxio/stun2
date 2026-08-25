@@ -6,7 +6,7 @@ STUN2：NAT 映射类型与存活期探测库（Go 模块 `github.com/cxio/stun2
 
 **全新构建**：忽略 git 历史（历史中的旧实现与旧文档已删除，不具任何权威性）。当前权威设计仅为 `docs/conception/` 下三篇构想文档：
 
-- `pubaddr.md` — `STUN:Addr` 公网地址获取（最基础服务，另被 Cone 预探测与 Live 预环境验证复用）
+- `pubaddr.md` — `STUN:Addr` 公网地址获取（最基础服务，另被 Cone 预探测与正式探测复用）
 - `conelevel.md` — `STUN:Cone` NAT 类型探测，含 `STUN:Cone.Passage`, `STUN:Cone.Inquire`, `STUN:Cone.Challenge`, `STUN:Cone.NewHost`。
 - `keepalive.md` — `STUN:Live.Port/STUN:Live` NAT 映射存活期探测
 
@@ -33,8 +33,7 @@ README 将库划分为三部分：基础库（公共结构与格式规范）、�
 - QUIC ALPN 统一使用标准名 `h3`（避免协议特征）；服务器对协议的辨识采用首包（ClientHello）工作量认证（Equi-X）。这属于上层应用行为，不在本库实现范围。
 - 地址统一为 IPv6 格式，IPv4 采用 IPv4-mapped 编码（`::ffff:IPv4`）。
 - 裸 UDP 探测包为会话标识 SN：`Rnd16[0]` 高两位置零以标识非 QUIC 包；Cone 中低 2 位另用于标记消息源（`Rnd16[0] & 0x3C | source`：0=Passage、1=NewPort、2=NewHost），Live 则保留低 6 位（`& 0x3F`）。每个 SN 均即时构建、互不相同。
-- 协议默认常量（除注明外均可配置）：Cone 每台受托服务器发包上限 3、客户端探测回包超时 6s；Live 单轮发包上限 8、客户端超时 10s、Validation 有效期上限 45 分钟。粗测起始间隔无固定默认值，由用户按网络环境配置，但硬性下限为 10s（须大于服务端冗余发包总长 7.9s 加余量）。
-- 例外：Cone 通路探测超时 4/6s（客户端/服务端）不可配置，是少数硬编码常量之一。
+- 协议默认常量（除注明外均可配置）：Cone 每台受托服务器发包上限 3、客户端探测回包超时 6s；Live 单轮发包上限 8、Validation 有效期上限 45 分钟。粗测起始间隔无固定默认值，由用户按网络环境配置，但硬性下限为 10s（须大于服务端冗余发包总长 7.9s 加余量）。
 
 ## 命令
 
