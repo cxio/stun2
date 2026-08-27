@@ -60,7 +60,13 @@
 
 |    编号    |    文件    |  覆盖主题  |
 |------------|------------|------------|
-| （待更新） | （待更新） | （待更新） |
+| DEC-0001 | `DEC-0001-layer-boundaries.md` | 三层职责与包边界：连接所有权、裸 UDP 读取、驱动模型、一次调用范围 |
+| DEC-0002 | `DEC-0002-control-plane-rpc.md` | 控制面信封、每请求一条 Stream、失败可区分；通路失败只关连接 |
+| DEC-0003 | `DEC-0003-cone-result-set.md` | Cone 单次调用终态、QUIC Only 归属、挑战收集下限 2 |
+| DEC-0004 | `DEC-0004-live-silent-path.md` | Live 关 Conn 后旧路径只读裸 UDP，抑制 Stateless Reset；首次 Time.0 在关闭残留结束后 |
+| DEC-0005 | `DEC-0005-ephemeral-state.md` | 服务端允许的短暂表闭集；Live 10s 限速键为被测 Address |
+
+Live 控制通道与被测映射的地址关系、取消预环境验证，已写入 `conception/keepalive.md`，不单独立项。
 
 
 维护规则：

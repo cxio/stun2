@@ -142,7 +142,7 @@ SN = Rnd16 || HMAC_SHA256(Key, domainTag || Rnd16 || TmpN) || TmpN
 受托服务器收到协助请求后，若愿意提供协助，即生成工作量挑战种子（`Challenge`）响应。
 
 ```go
-// 截止时间长度（2分钟）
+// 截止时间长度（2分钟，可配置）
 // 受托服务器自己的配置，自己知道。
 Distance := 120 * time.Second
 
@@ -199,6 +199,8 @@ Challenge = Timestamp || HMAC_SHA256( DelegateKey, ServAddr || Expire )
 客户端根据服务器返回的挑战种子，计算工作量（`Equi-X` 算法）：
 
 ```go
+import equix "github.com/cxio/equix.cgo"
+
 // 工作量运算：
 // 将自身公网地址（探测目标）包含进工作量锁定。
 // @Challenge 挑战种子，32+字节
