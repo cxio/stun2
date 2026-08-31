@@ -199,16 +199,22 @@ Challenge = Timestamp || HMAC_SHA256( DelegateKey, ServAddr || Expire )
 客户端根据服务器返回的挑战种子，计算工作量（`Equi-X` 算法）：
 
 ```go
-import equix "github.com/cxio/equix.cgo"
+import "github.com/cxio/equix-cgo/ratio"
+
+// 达标成功率
+// 注：固定，不可配置。
+const defaultRatio = 0.1
+
+// 阈值门槛
+var threshold = ratio.TargetFromProbability(defaultRatio)
 
 // 工作量运算：
 // 将自身公网地址（探测目标）包含进工作量锁定。
 // @Challenge 挑战种子，32+字节
-// @Address   客户端公网地址（IP:Port），即探测目标
+// @Address   客户端公网地址（IP:Port），18 字节线格式
 // @KeyHash   会话密钥封装（SHA256(Key32)）
-// @Nonce     内部生成解的一个随机数，返回用于验证
-// @Solution  工作量的一个解，16字节（2*8）
-Solution, Nonce, err := equix.Solve(Challenge || Address || KeyHash, nonce)
+// @soln      PuzzleSolution{Nonce, Solution}
+soln, _ := ratio.SolvePuzzle( Blake3(Challenge || Address || KeyHash), threshold )
 ```
 
 客户端在新创建的 QUIC 连接上发送 `STUN:Cone` 请求，包含如下数据：
@@ -226,13 +232,19 @@ Solution, Nonce, err := equix.Solve(Challenge || Address || KeyHash, nonce)
 源服务器收到客户端请求后，提取数据，验证工作量：
 
 ```go
+import "github.com/cxio/equix-cgo/ratio"
+
 // 验证工作量：
 // ClientAddr 为即时提取，应与上面客户端 STUN:Addr 请求的结果相同。
 // 这是一种耦合约束，若不同即验证失败。
 //
 // @ClientAddr 客户端公网地址，从底层连接提取
 // @KeyHasp 会话密钥 Key32 封装：SHA256(Key32)
-return equix.Verify(Challenge || ClientAddr || KeyHash, Solution, Nonce)
+soln := &ratio.PuzzleSolution{
+    Nonce: Nonce,
+    Solution: Solution,
+}
+return ratio.VerifyPuzzle( Blake3(Challenge || ClientAddr || KeyHash), threshold, soln )
 ```
 
 > **实现：**
@@ -294,9 +306,15 @@ return Hash == Challenge[len(NowOld):]
 ```
 
 ```go
+import "github.com/cxio/equix-cgo/ratio"
+
 // 验证工作量
 // Target 应当与前面 ClientAddr 和 Address 是同一个值。
-return equix.Verify(Challenge || Target || KeyHash, Solution, Nonce)
+soln := &ratio.PuzzleSolution{
+    Nonce: Nonce,
+    Solution: Solution,
+}
+return ratio.VerifyPuzzle( Blake3(Challenge || Target || KeyHash), threshold, soln )
 ```
 
 如果验证通过，受托服务器配合执行 `NewHost` 操作：

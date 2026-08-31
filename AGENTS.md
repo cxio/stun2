@@ -31,7 +31,7 @@ README 将库划分为三部分：基础库（公共结构与格式规范）、�
 - 核心依赖 quic-go 的「同一 UDPConn 复用 QUIC + 裸 UDP」机制（`quic.Transport{Conn: udpConn}`、`Transport.ReadNonQUICPacket()`），可行性已评审确认（见 `MEMORY.md`）。
 - 客户端 `STUN:Cone` 正式探测（创建映射）阶段的新 Socket 必须用 `net.ListenUDP`（未连接 Socket），不可用 `net.DialUDP`——未知 IP 的探测回包（NewHost）会被系统丢弃。`STUN:Addr` 与 `STUN:Live` 无此限制（回包源 IP 已知，拨号创建的连接即可）。
 - QUIC ALPN 统一使用标准名 `h3`（避免协议特征）；服务器对协议的辨识采用首包（ClientHello）工作量认证（Equi-X）。这属于上层应用行为，不在本库实现范围。
-- Cone 挑战的 Equi-X（客户端 `Solve`，源服务器与受托 `Verify`）调用 `github.com/cxio/equix.cgo`，本库不实现该算法。
+- Cone 挑战的 Equi-X（客户端 `SolvePuzzle`，源服务器与受托 `VerifyPuzzle`）调用 `github.com/cxio/equix-cgo/ratio`，本库不实现该算法。
 - 受托连接池由应用提供并实现；库只定义调用接口（抽选、在已有连接上发 `STUN:Cone.Challenge` / `STUN:Cone.NewHost`）。
 - 地址统一为 IPv6 格式，IPv4 采用 IPv4-mapped 编码（`::ffff:IPv4`）。
 - 裸 UDP 探测包为会话标识 SN：`Rnd16[0]` 高两位置零以标识非 QUIC 包；Cone 中低 2 位另用于标记消息源（`Rnd16[0] & 0x3C | source`：0=Passage、1=NewPort、2=NewHost），Live 则保留低 6 位（`& 0x3F`）。每个 SN 均即时构建、互不相同。
