@@ -2,7 +2,7 @@
 
 ## 背景 （Context）
 
-Live 为「极简状态」服务，Cone 受托为「无状态协助」。但源服务器要能把 Challenge 对应到受托；Live 要暂存 `Key32` 才能发 SN 并识别回包；同一地址最小间隔 10s 不可配置。不划清允许的表，Proposal 可能无法正确制定规格。
+Live 为「极简状态」服务，Cone 受托为「无状态协助」。但源服务器要能把 Challenge 对应到受托；Live 要暂存 `Key32` 才能发 SN 并识别回包；同一地址最小间隔 10s 不可配置。不划清允许的表，Spec 可能无法正确制定规格。
 
 挑战集按 Challenge 索引、TTL 不超过 2 分钟，构想已经写明。Live 探测包发往请求里的 `Address`、不绑控制通道 IP，构想也已经写明。本决策只补「还允许哪些表、键是什么」。
 
@@ -24,8 +24,8 @@ Live 为「极简状态」服务，Cone 受托为「无状态协助」。但源�
 
 ## 影响 （Consequences）
 
-- Proposal 不得引入「Inquire 会话 ID」「按控制通道 IP 的 Live 会话」等额外表。
-- 限速表容量与驱逐策略（例如按 Address 的 TTL 略大于 10s）由 Proposal 规定，但不得改键。
+- Spec 不得引入「Inquire 会话 ID」「按控制通道 IP 的 Live 会话」等额外表。
+- 限速表容量与驱逐策略（例如按 Address 的 TTL 略大于 10s）由 Spec 规定，但不得改键。
 - 源服务器重启后 Challenge 映射丢失，进行中的 Cone 失败，客户端换节点或重走 Inquire。Live 的 `BaseKey` 重启使 Validation 失效，同样回预探测（构想已有）。
 
 ## 构想层依据 （Conception References）

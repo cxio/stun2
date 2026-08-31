@@ -36,12 +36,12 @@ Go 模块仍为 `github.com/cxio/stun2`，公开包三个：
 
 同一 `quic.Transport` 只有一个非 QUIC 读取点。库创建的探测 Socket 没有第二位读者，独占最干净；应用已有的 p2p Transport 不能被库抢走读取权，故按所有权拆。
 
-Live 可能数十分钟，必须能取消；纯状态机便于测，Runner 避免每个调用方重写定时器。一次调用一个地址族，与 `pubaddr.md`「要测 IPv4 必须显式走 IPv4」一致。构想已删 Exclist，并写明综合评估不是本协议职责，这里写成「明确不做」，避免 Proposal 加回来。
+Live 可能数十分钟，必须能取消；纯状态机便于测，Runner 避免每个调用方重写定时器。一次调用一个地址族，与 `pubaddr.md`「要测 IPv4 必须显式走 IPv4」一致。构想已删 Exclist，并写明综合评估不是本协议职责，这里写成「明确不做」，避免 Spec 加回来。
 
 ## 影响 （Consequences）
 
-- Proposal 按三个包列导出符号；应用负责节点表、TLS 材料和双栈是否跑两遍。
-- Proposal 为受托池定义调用接口，不提供默认实现；应用注入实现后，`stun2/server` 才能做 Inquire 抽选与 NewHost 委托。
+- Spec 按三个包列导出符号；应用负责节点表、TLS 材料和双栈是否跑两遍。
+- Spec 为受托池定义调用接口，不提供默认实现；应用注入实现后，`stun2/server` 才能做 Inquire 抽选与 NewHost 委托。
 - `go.mod` 依赖 `github.com/cxio/equix-cgo/ratio`；Cone 客户端 `SolvePuzzle` 与服务端/受托 `VerifyPuzzle` 均为其调用方。
 - 注入 Transport 的调用方必须把非 QUIC 包 push 进库，否则 Cone / Live 收不到 SN。
 - 禁止迁移后，控制通道地址在一轮探测内视为稳定；换网表现为连接断开（Live 丢弃本轮，见 `keepalive.md`）。

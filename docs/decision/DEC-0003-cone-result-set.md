@@ -25,7 +25,7 @@ Passage 与 Inquire 不必同源，不在此重复决策。
 
 - 公开结果类型不含 `UDP Blocked`，也不含 `Unknown`。探测不确定（例如正式探测前出错）用 error，不用伪类型。
 - 应用若要提高置信度，对多个源服务器各调用一次，自己做投票或展示。
-- Proposal 的 Cone 服务器：Inquire 在池不足时失败；收集协程在满 2 份后即可返回，不必死等抽选数量。
+- Spec 的 Cone 服务器：Inquire 在池不足时失败；收集协程在满 2 份后即可返回，不必死等抽选数量。
 
 ## 构想层依据 （Conception References）
 

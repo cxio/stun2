@@ -7,12 +7,12 @@
 ## 决策 （Decision）
 
 1. **旧路径保留 `quic.Transport`，专用于 `ReadNonQUICPacket()` 接收 SN。** 不再在该 Transport 上接受新的 QUIC 连接，也不再从该路径发出任何 QUIC 包（关闭残留窗口内的 `CONNECTION_CLOSE` 除外，见第 3 条）。
-2. **必须抑制 Stateless Reset，并从 `Time.0` 起旧路径零发送。** 具体 API 对应留给 Proposal，但验收条件是：自 `Time.0` 至本轮结束（含间隔等待），对该 UDP 四元组抓包，除服务端按 `STUN:Live` 请求发出的 SN 和客户端对 SN 的回应外，不应出现其它 UDP 载荷。
-3. **首次 `Time.0` 在关闭残留结束之后。** 旧路径 `quic.Conn` 必须干净关闭（向对端发出 `CONNECTION_CLOSE`），好让服务端停发。实现上 quic-go 将已关闭连接的 `CONNECTION_CLOSE` 重传窗口设为 `3*PTO`；等待方式由 Proposal 按所选版本落地。首次之后的 `Time.0` 仍按构想规则，不再受关闭残留影响。
+2. **必须抑制 Stateless Reset，并从 `Time.0` 起旧路径零发送。** 具体 API 对应留给 Spec，但验收条件是：自 `Time.0` 至本轮结束（含间隔等待），对该 UDP 四元组抓包，除服务端按 `STUN:Live` 请求发出的 SN 和客户端对 SN 的回应外，不应出现其它 UDP 载荷。
+3. **首次 `Time.0` 在关闭残留结束之后。** 旧路径 `quic.Conn` 必须干净关闭（向对端发出 `CONNECTION_CLOSE`），好让服务端停发。实现上 quic-go 将已关闭连接的 `CONNECTION_CLOSE` 重传窗口设为 `3*PTO`；等待方式由 Spec 按所选版本落地。首次之后的 `Time.0` 仍按构想规则，不再受关闭残留影响。
 4. **服务端对称约束。** 在客户端两次 `STUN:Live` 之间的静默窗口内，服务端不得向被测 `Address` 发送任何包（包括 QUIC 重传、路径探测、Reset）。探测包只在当前 `STUN:Live` 请求验证通过之后，从 Listener 同一 IP:Port 发出。
 5. **这是测量正确性的硬不变量**，不是可选优化。做不到静默的实现不得声称符合 `STUN:Live`。
 
-不采用「拆掉 Transport、改用 `UDPConn.ReadFrom`」作为默认路径。若某版本 quic-go 在无连接、且已关闭 Reset 的 Transport 上仍无法停止自发包，再在 Proposal 里记录被迫直读 UDPConn 的例外，并仍需满足第 2 条抓包验收。
+不采用「拆掉 Transport、改用 `UDPConn.ReadFrom`」作为默认路径。若某版本 quic-go 在无连接、且已关闭 Reset 的 Transport 上仍无法停止自发包，再在 Spec 里记录被迫直读 UDPConn 的例外，并仍需满足第 2 条抓包验收。
 
 ## 理由 （Rationale）
 
@@ -27,7 +27,7 @@
 ## 影响 （Consequences）
 
 - `stun2/client` 在 Step.1 须：干净关闭旧 `quic.Conn` → 等到关闭残留窗口结束 → 记录首次 `Time.0` → 进入「只读裸 UDP」模式；不得丢弃 Transport。
-- 构造该 Transport 时不得启用 Stateless Reset（Proposal 选定对应字段）；该路径上不再 `Dial` / `Listen`。
+- 构造该 Transport 时不得启用 Stateless Reset（Spec 选定对应字段）；该路径上不再 `Dial` / `Listen`。
 - 测试需要能证明：`Time.0` 之后无 `CONNECTION_CLOSE` 重传、无 Reset、无其它额外发包（抓包或可注入的 Transport 替身）。
 - 服务端处理 `STUN:Live` 的发送循环不得与该 Listener 上其它 QUIC 连接的重传混淆到被测 Address；被测映射在窗口内不是一条活跃 QUIC 连接。
 
@@ -37,4 +37,4 @@
 
 ## 开放问题 （Open Questions）
 
-无。quic-go 的具体关闭/抑制接口与关闭残留等待方式由 Proposal 选定，不在此钉死版本号。
+无。quic-go 的具体关闭/抑制接口与关闭残留等待方式由 Spec 选定，不在此钉死版本号。

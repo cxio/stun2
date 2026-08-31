@@ -12,15 +12,15 @@ STUN2：NAT 映射类型与存活期探测库（Go 模块 `github.com/cxio/stun2
 
 README 将库划分为三部分：基础库（公共结构与格式规范）、客户端、服务器（各自的行为规范与建议）；后续包边界划分以此为基础。
 
-项目目前处于设计阶段：`docs/proposal/`、`docs/plan/` 尚为空（git 不跟踪空目录，克隆后需自建），代码未开始编写。Decision 见 `docs/decision/`。
+项目目前处于设计阶段：`docs/spec/`、`docs/plan/` 尚为空（git 不跟踪空目录，克隆后需自建），代码未开始编写。Decision 见 `docs/decision/`。
 
 ## 文档体系（必读）
 
-`docs/AGENTS.md` 定义四层文档结构、权威顺序（`Conception` + `Decision` > `Proposal` > `Plan`）与维护规则，其中「目录设计」与「维护总则」两章节明确不可修改。日常工作的关键规则：
+`docs/AGENTS.md` 定义四层文档结构、权威顺序（`Conception` + `Decision` > `Spec` > `Plan`）与维护规则，其中「目录设计」与「维护总则」两章节明确不可修改。日常工作的关键规则：
 
-- 实现任何功能前，先读对应 `plan/` 文件，再回溯 `proposal/`，有疑问查 `decision/` 与 `conception/`。
-- 发现 Proposal/Plan 与上层文档不一致时，先修改 Conception/Decision，再重新生成下游文件；不得只改一处而不同步。
-- 新增 `decision/`、`proposal/`、`plan/` 文件时，须同步更新 `docs/AGENTS.md` 对应章节的索引表（现为「待更新」占位）。
+- 实现任何功能前，先读对应 `plan/` 文件，再回溯 `spec/`，有疑问查 `decision/` 与 `conception/`。
+- 发现 spec/Plan 与上层文档不一致时，先修改 Conception/Decision，再重新生成下游文件；不得只改一处而不同步。
+- 新增 `decision/`、`spec/`、`plan/` 文件时，须同步更新 `docs/AGENTS.md` 对应章节的索引表（现为「待更新」占位）。
 - `plans/`（带 s）是 Agent 临时实施计划目录，不属于正式文档；正式方案在 `plan/`。
 - Decision 文件命名：`DEC-NNNN-<short-description>.md`；新增前须先确认 Conception 未曾明确该规则。
 
