@@ -136,7 +136,11 @@ Validation := Timestamp || HMAC_SHA256( BaseKey, domainTag || ClientAddr.IP || C
 对于客户端在 `ClientAddr.Port` 上的侦听来说：
 
 - 如果收到探测包，表示映射没有改变，原映射端口依然有效。
-- 以新收到 Validation 时为起点，如果**10**秒超时（*不可配置*）没有收到探测包，则表示映射已经改变，探测不可达。
+- 以发出 `STUN:Live` 请求起为起点，如果**10**秒超时（*不可配置*）没有收到探测包，则表示映射已经改变，探测不可达。
+
+> **注记：**
+> 不以收到 `Validation` 为起点，因为服务端发送 Validation 后即发送 SN，
+> 而裸 UDP 链路的 SN 可能先期抵达。
 
 
 ## 服务端

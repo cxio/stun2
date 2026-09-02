@@ -80,11 +80,6 @@ SN = Rnd16 || HMAC_SHA256(Key, domainTag || Rnd16 || TmpN) || TmpN
 > 客户端应当在尽可能短的时间内（或并发）向不同的服务节点请求 `STUN:Addr`，
 > 以避免 CGNAT 映射重绑定（旧端口被回收）导致的端口不同而误判。
 
-然后，客户端用返回地址与本机地址对比（IP:Port 全等比较）：
-
-- 相同（Y）：`Open Internet` | `UDP Firewall`，待进一步确认。
-- 不同（N）：待正式探测，进一步判断……
-
 
 ### 实现注意事项
 
@@ -189,7 +184,10 @@ Challenge = Timestamp || HMAC_SHA256( DelegateKey, ServAddr || Expire )
 
 客户端通过新创建的 QUIC 连接，向服务器发送 `STUN:Addr` 请求，创建并获取当前连接的公网 NAT 映射地址。
 
-服务器返回客户端的公网地址 `IP:Port`。
+服务器返回客户端的公网地址 `IP:Port`。客户端记住该地址，同时与本机*新创建映射*的地址比较：相同（`NewMap.Y`）或不同（`NewMap.N`）。
+
+> **注意：**
+> 此处本机地址中的IP非通配的 `0:0:0:0` 或 `[::]`，而是实际网卡的通讯IP。
 
 至此，客户端通过该 QUIC 的 `Transport.ReadNonQUICPacket()` 开始监听远端的探测回包（*NewPort/NewHost*）。
 
@@ -241,7 +239,7 @@ import "github.com/cxio/equix-cgo/puzz"
 // 这是一种耦合约束，若不同即验证失败。
 //
 // ClientAddr 客户端公网地址，从底层连接提取
-// KeyHasp 会话密钥 Key32 封装：SHA256(Key32)
+// KeyHash 会话密钥 Key32 封装：SHA256(Key32)
 soln := &puzz.Solution{
     Nonce: Nonce,
     Solution: Solution,
@@ -257,7 +255,7 @@ return puzz.Verify( SHA256(Challenge || ClientAddr || KeyHash), threshold, soln 
 
 如果验证通过，源服务器执行如下操作：
 
-- `NewPort`: 用一个新的随机端口向客户端发送探测包（`SN`）：数量**4**个，间隔时间 `100ms ~ 400ms` 随机选取。
+- `NewPort`: 用一个新的随机端口（IP不变）向客户端发送探测包（`SN`）：数量**4**个，间隔时间 `100ms ~ 400ms` 随机选取。
 - `NewHost`: 向原受托服务器发送完整协助请求（`STUN:Cone.NewHost`）。
 
 NewPort 和 NewHost 可以多路并发，两者并不冲突。
@@ -274,9 +272,6 @@ NewPort 和 NewHost 可以多路并发，两者并不冲突。
 - Challenge: 原挑战种子。由客户端提供的值对应到原受托服务器。
 - Solution:  工作量的一个解，16字节。客户端提供。
 - Nonce:     配合工作量解的一个随机数。客户端提供。
-
-> **无状态协助：**
-> 数据包携带 `Challenge` 本身，受托服务器简单验证即可，无需存储对应。
 
 
 ### 受托协助
@@ -326,6 +321,16 @@ return puzz.Verify( SHA256(Challenge || Target || KeyHash), threshold, soln )
 
 > **提示：**
 > 源服务器与受托服务器之间通常也是 QUIC 安全连接。
+
+
+#### 单一发包
+
+为避免源服务器的重复委托带来的重放问题，受托服务器需要暂存目标地址（`Target`），不重复接受委托发包。
+
+暂存期时长与挑战种子有效期相同即可。
+
+> **提示：**
+> 客户端的每一次正式探测请求 `STUN:Cone` 都是开新端口，无「相同映射不同委托」的问题。
 
 
 ### 客户端收包
@@ -402,9 +407,9 @@ return Hash == HMAC_SHA256(Key, domainTag || Rnd16 || TmpN)
 - 超时 => `P-RC | Sym-Like` => `P-RC`。**注**：`Sym-Like` 已在预探测中确认并排除。
 
 **NewHost**:
-- 收到 + 预探测.N => `FullC`。
-- 收到 + 预探测.Y => `Open Internet`，即 `Public`。
-- 超时 + 预探测.Y => `UDP Firewall` 网域。
+- 收到 + NewMap.N => `FullC`。
+- 收到 + NewMap.Y => `Open Internet`，即 `Public`。
+- 超时 + NewMap.Y => `UDP Firewall` 网域。
 
 如果 NewHost 先到，NewPort 的超时等待可以提前结束。也即：如果当前已经可以做出判断，即可终止其它等待。
 
@@ -414,7 +419,7 @@ return Hash == HMAC_SHA256(Key, domainTag || Rnd16 || TmpN)
 > **注：**
 > 不含 `Sym-Like` 条目，其已在预探测阶段完成。
 
-| NewPort 收到 | NewHost 收到 | 与本地地址相同 | 结果 |
+| NewPort 收到 | NewHost 收到 | 与本机地址对比 | 结果 |
 |:---:|:---:|:---:|------|
 | * | Y | N | Full Cone |
 | Y | N | N | RC |
@@ -423,8 +428,8 @@ return Hash == HMAC_SHA256(Key, domainTag || Rnd16 || TmpN)
 | * | N | Y | UDP Firewall |
 
 **说明：**
-- `N` 表示否定（No）。
-- `Y` 表示肯定（Yes）。
+- `N` 表示否定/不同（No）。
+- `Y` 表示肯定/相同（Yes）。
 - `*` 表示无需考虑，N/Y 皆可。
 
 
@@ -454,9 +459,7 @@ return Hash == HMAC_SHA256(Key, domainTag || Rnd16 || TmpN)
 
 0)
 Addr.0 != Addr.1   --> Sym-Like. END.
-Addr.0 == Addr.1/
-    Addr.1 == LocalAddr (Y)   --> Open Internet | UDP Firewall
-    Addr.1 != LocalAddr (N)   --> (Next Step...)
+Addr.0 == Addr.1   --> (Next Step...)
 
 Serv.0/
     QUIC => ok
@@ -467,9 +470,9 @@ NewPort: Received?
     Yes   --> RC | FullC
     No    --> P-RC
 NewHost: Received?
-    Yes & 1.N   --> FullC
-    Yes & 1.Y   --> Open Internet (Public)
-    No  & 1.Y   --> UDP Firewall
+    Yes & NewMap.N  --> FullC
+    Yes & NewMap.Y  --> Open Internet (Public)
+    No  & NewMap.Y  --> UDP Firewall
 ```
 
 
