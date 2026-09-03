@@ -121,15 +121,11 @@ SN = Rnd16 || HMAC_SHA256(Key, domainTag || Rnd16 || TmpN) || TmpN
 客户端拨号任意一台服务器创建 QUIC 连接，发送 `STUN:Cone.Inquire` 请求，询问对端是否可提供 `STUN:Cone` 探测服务。
 
 - **源服务器**：客户端直接连接询问的服务器，也是直接提供 `STUN:Cone` 服务的服务器。
-- **受托服务器**：源服务器请求另一台服务节点协助执行 `NewHost` 委托发包，接收委托的服务器。
+- **受托服务器**：源服务器请求另一台服务节点协助执行 `NewHost` 委托发包，接受委托的服务器。
 
 源服务器会维护一个连接池，其中包含一定数量受托服务器的节点。
 
-收到客户端询问后，如果连接池节点充足，源服务器会从中随机抽选**2~3**个节点（默认**3**）请求协助（`STUN:Cone.Challenge`）。否则返回错误。
-
-> **规则：**
-> 每一个探测请求需要 `[2-3]` 台受托服务器，即最少**2**台，最多**3**台。
-> 每台受托服务器会向目标节点发送**3**个探测包，间隔时间 `100ms ~ 500ms` 随机取值。
+当收到客户端的询问后，源服务器从连接池中随机抽选受托服务器，发送受托协商请求 `STUN:Cone.Challenge`。
 
 
 #### 受托协商
@@ -142,8 +138,8 @@ SN = Rnd16 || HMAC_SHA256(Key, domainTag || Rnd16 || TmpN) || TmpN
 Distance := 120 * time.Second
 
 // 字节序列
-// 变长整，ULEB128 最简编码
 // Go/time 中的 Now 为纳秒时间戳，忽略生成重复 Challenge 的可能。
+// Encode 变长整数编码（ULEB128 最简编码）
 Timestamp := Encode( Now )
 
 // 截止时间戳
@@ -151,14 +147,19 @@ Expire := Encode( Now + Distance )
 
 // 受托服务器生成挑战种子：
 // DelegateKey 委托服务器密钥（通常启动后随机生成）
+// domainTag 域标签：STUN:Cone.Challenge
 // ServAddr 源服务器地址（IP:Port）
-// Encode 变长整数编码（ULEB128 最简编码）
-Challenge = Timestamp || HMAC_SHA256( DelegateKey, ServAddr || Expire )
+Challenge = Timestamp || HMAC_SHA256( DelegateKey, domainTag || ServAddr || Expire )
 ```
 
-挑战种子没有目标限定，仅对源服务器地址绑定且有效期很短。
+挑战种子没有目标限定，仅绑定源服务器地址且有效期很短。
 
-源服务器收到目标数量的挑战种子后，即可向客户端返回（转发）挑战种子集。收集有超时限制，默认**10**秒，可配置。
+
+#### 受托收集
+
+源服务器联系受托节点不一定每次都成功，它需要持续尝试并收集同意协助的节点，当收集到**3**台服务器愿意协助后，即可向客户端回应收到的挑战种子（`Challenge`）集。
+
+收集有超时限制，固定为**7**秒（不可配置），若超时时不足**3**台但已凑齐**2**台，也为有效，可向客户端正常回复。否则返回错误，表示无法提供 `STUN:Cone` 服务。
 
 > **实现：**
 > 源服务器需要暂存挑战种子与受托服务器地址的映射。
@@ -166,13 +167,13 @@ Challenge = Timestamp || HMAC_SHA256( DelegateKey, ServAddr || Expire )
 
 ### 创建映射
 
-客户端收到源服务器返回的挑战种子集，即确定服务可用。
+在超时期限（**11**秒）内，客户端若收到源服务器返回的挑战种子集，即确定服务可用。
 
-然后通过新的端口创建 `net.ListenUDP` 未连接 Socket，然后在此之上创建到上面询问的*源服务器*的新的 QUIC 连接。
+然后，客户端用新的端口创建 `net.ListenUDP` 未连接 Socket，并在此之上创建到该源服务器的*新 QUIC 连接*。
 
 > **提示：**
 > 客户端可并发尝试不同服务器以请求探测，提高结果的可靠性，
-> 但每个并发需要在不同的端口上进行，从根本上隔离数据流，避免混淆会话标识（`SN`，见下文）。
+> 但每个并发需要在不同的端口上进行，从根本上隔离数据流，避免混淆会话标识（`SN`）。
 
 **注意**不能使用 `net.DialUDP`，因为受托服务器的探测回包（*NewHost*）是未知 IP，会被系统丢弃。
 
@@ -193,6 +194,8 @@ Challenge = Timestamp || HMAC_SHA256( DelegateKey, ServAddr || Expire )
 
 
 ### 请求探测
+
+#### 工作量计算
 
 客户端根据服务器返回的挑战种子，计算工作量（`Equi-X` 算法）：
 
@@ -216,6 +219,9 @@ threshold, _ := puzz.FromProbability(defaultRatio)
 soln, _ := puzz.Solve( SHA256(Challenge || Address || KeyHash), threshold, 13 )
 ```
 
+
+#### 发送请求
+
 客户端在新创建的 QUIC 连接上发送 `STUN:Cone` 请求，包含如下数据：
 
 - Version:   版本号（初始值 1）。
@@ -228,6 +234,8 @@ soln, _ := puzz.Solve( SHA256(Challenge || Address || KeyHash), threshold, 13 )
 
 
 ### 服务响应
+
+#### 验证工作量
 
 源服务器收到客户端请求后，提取数据，验证工作量：
 
@@ -253,6 +261,9 @@ return puzz.Verify( SHA256(Challenge || ClientAddr || KeyHash), threshold, soln 
 >
 > 挑战种子暂存时间不超过**2**分钟（可配置），过期即可清理（低资源占用）。
 
+
+#### 完成服务
+
 如果验证通过，源服务器执行如下操作：
 
 - `NewPort`: 用一个新的随机端口（IP不变）向客户端发送探测包（`SN`）：数量**4**个，间隔时间 `100ms ~ 400ms` 随机选取。
@@ -276,6 +287,8 @@ NewPort 和 NewHost 可以多路并发，两者并不冲突。
 
 ### 受托协助
 
+#### 验证工作量
+
 受托服务器收到正式的协助请求后，验证发来的数据：
 
 ```go
@@ -294,8 +307,9 @@ if Now > Expire {
 }
 
 // 种子合法性
-// ServAddr 源服务器地址
-Hash := HMAC_SHA256( DelegateKey, ServAddr || Encode(Expire) )
+// domainTag: STUN:Cone.Challenge
+// ServAddr: 源服务器地址
+Hash := HMAC_SHA256( DelegateKey, domainTag || ServAddr || Encode(Expire) )
 
 // 若返回 false,
 // 可能是 Challenge 前置的时间戳被修改
@@ -314,20 +328,15 @@ soln := &puzz.Solution{
 return puzz.Verify( SHA256(Challenge || Target || KeyHash), threshold, soln )
 ```
 
+
+#### 协助发包
+
 如果验证通过，受托服务器配合执行 `NewHost` 操作：
 
 - 向目标客户端（`Target`）发送裸 UDP 探测包，数据负载为相同规则即时构造的 `SN`。
-- 探测包数量**3**个，间隔时间 `100ms ~ 500ms` 随机取值（如前「规则」）。
+- 探测包数量**3**个，间隔时间 `100ms ~ 500ms` 随机取值。
 
-> **提示：**
-> 源服务器与受托服务器之间通常也是 QUIC 安全连接。
-
-
-#### 单一发包
-
-为避免源服务器的重复委托带来的重放问题，受托服务器需要暂存目标地址（`Target`），不重复接受委托发包。
-
-暂存期时长与挑战种子有效期相同即可。
+为避免源服务器的重复委托带来的重放问题，受托服务器需要暂存目标地址（`Target`），不重复接受委托发包。暂存期时长与挑战种子有效期相同即可。
 
 > **提示：**
 > 客户端的每一次正式探测请求 `STUN:Cone` 都是开新端口，无「相同映射不同委托」的问题。
@@ -410,6 +419,7 @@ return Hash == HMAC_SHA256(Key, domainTag || Rnd16 || TmpN)
 - 收到 + NewMap.N => `FullC`。
 - 收到 + NewMap.Y => `Open Internet`，即 `Public`。
 - 超时 + NewMap.Y => `UDP Firewall` 网域。
+- 超时 + NewMap.N => 不单独定论，交给 NewPort 判断 `RC` / `P-RC`（见矩阵）。
 
 如果 NewHost 先到，NewPort 的超时等待可以提前结束。也即：如果当前已经可以做出判断，即可终止其它等待。
 

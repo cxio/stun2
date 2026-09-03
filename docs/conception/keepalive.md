@@ -64,7 +64,7 @@ return Hash == HMAC_SHA256(Key32, domainTag || Rnd16 || TmpN)
 // Unix 时间，单位：秒；变长整数（ULEB128 最简编码）
 Timestamp := Encode( Now + Distance )
 
-// @domainTag: STUN:Live.Port
+// domainTag: STUN:Live.Port
 Validation := Timestamp || HMAC_SHA256( BaseKey, domainTag || ClientAddr.IP || ClientAddr.Port || Timestamp )
 ```
 
@@ -92,12 +92,16 @@ Validation := Timestamp || HMAC_SHA256( BaseKey, domainTag || ClientAddr.IP || C
 至此，客户端和服务器之间有了两条通讯链路：
 
 1. 裸 UDP 旧连接：用于接收服务端发送的探测包。
-2. 新 QUIC 连接：用于客户端与服务器通讯：发送 `STUN:Live` 请求，让服务器在旧连接上发送探测包。
+2. 新 QUIC 连接：用于客户端与服务器通讯（客户端发送 `STUN:Live` 请求，服务器在旧连接上发送探测包）。
 
-客户端关闭 QUIC 连接之，等到该路径上因关闭而产生的发送全部结束后，即记录首次*探测间隔*的起始时间 `Time.0`。
+客户端关闭 QUIC 连接，等到该路径上因关闭而产生的发送全部结束后，即记录首次*探测间隔*的起始时间 `Time.0`。
 
 > **注意：**
-> 旧链路从 `Time.0` 起必须完全静默，包括客户端和服务器双方，避免残留的 Transport 可能回 Stateless Reset 而续活映射。
+> 旧链路从 `Time.0` 起必须完全静默，包括客户端和服务器双方，即：
+> - 服务端在该 Address 的连接进入 closing 后，除即时回应的一个 `CONNECTION_CLOSE` 外，不再向该 Address 发送任何包，直到收到客户端的 `STUN:Live` 请求。
+> - 客户端在关闭 QUIC 连接后，仅有裸 UDP 链路上的监听和验证通过后的及时回包。
+>
+> 这样才能避免残留的 Transport 可能回 Stateless Reset 而续活映射。
 
 > **设计：**
 > 与传统探测不同，本设计中延时不由服务器控制，客户端掌控所有探测节奏。服务器简单响应即可。
@@ -170,7 +174,7 @@ if Now.Timestamp > Decode(Timestamp) {
 Valid32 := Validation[len(Timestamp):]
 
 // 目标是否合法：
-// @domainTag: STUN:Live.Port
+// domainTag: STUN:Live.Port
 // Address 客户端传递来的目标地址
 return Valid32 == HMAC_SHA256(BaseKey, domainTag || Address.IP || Address.Port || Timestamp)
 ```
@@ -184,7 +188,7 @@ Expire := Now.Timestamp + Distance
 Timestamp := Encode( Expire )
 
 // 新的有效期证明
-// @domainTag: STUN:Live.Port
+// domainTag: STUN:Live.Port
 Validation := Timestamp || HMAC_SHA256( BaseKey, domainTag || Address.IP || Address.Port || Timestamp )
 ```
 
@@ -299,6 +303,13 @@ Done => 2.5m    // 结束
 > 每一次失败之后的再次探测尝试，需要从「*§.预探测：创建 NAT 映射*」开始。下面「精测」部分也同。
 
 
+#### 间隔下限
+
+每一次探测的静默间隔不得低于**10s**，含起始值和失败回退的 `Start/2`。若算出的 `next` 低于 10s，即停止流程，最后一次成功的值即为存活期。
+
+也因此，本协议不报告短于 10s 的存活期。若 `Start=10s` 且失败，回退将低于 10s，因此探测无法继续，将报告为失败（明确说明原因）。
+
+
 #### 使用提示
 
 如果客户端粗测持续成功……直到抵达次数上限而终止，通常说明配置可能有问题：
@@ -318,7 +329,7 @@ Done => 2.5m    // 结束
 - **成功**：对增量进行二分递增：`D/2/2`、`D/2/2/2`……
 - **失败**：对增量进行二分递减：`-D/2/2`、`-D/2/2/2`……
 
-依此规则持续迭代：成功后递增，失败后递减，直到收敛的*增/减量*达到设定的精度（如**5**秒）以下，最后一次成功的值即为结果值。
+依此规则持续迭代：成功后递增，失败后递减，直到收敛的*增/减量*达到设定的精度（如**5**秒）以下，最后一次成功的值即为结果值。与粗测同规则，每一次探测间隔也不能低于**10s**。
 
 精测流程示意（伪代码）：
 
@@ -358,8 +369,7 @@ End => 270s         // 精度已完成：|-3.75| < 5
 ```
 
 > **提示：**
-> 精度（如5秒）是两轮测试生存期的差值，不是生存期本身。不会与 `7.9s` 冗余发包总时长冲突。
-
+> 精度（如5秒）是两轮测试存活期的差值，也是**收敛终止**判断条件，不是存活期本身，也不与 `7.9s` 的冗余发包总时长冲突。
 
 ### 可分离性
 
@@ -371,5 +381,3 @@ End => 270s         // 精度已完成：|-3.75| < 5
 ### 配置
 
 *起始间隔*、*精测精度*应可由用户配置，以强化对不同网络的适应性。
-
-移动网络的 NAT 存活期较短，但起始间隔时间不能低于**10**秒（超出服务端冗余发送时间总长 `7.9s` 加一点余量）。
