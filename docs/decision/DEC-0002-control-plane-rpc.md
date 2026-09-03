@@ -25,7 +25,7 @@
 ## 构想层依据 （Conception References）
 
 - `conception/pubaddr.md`：QUIC Stream；Version 不符返回错误。
-- `conception/conelevel.md`：各请求带 Version；通路失败关 QUIC；Inquire 池不足返回错误。
+- `conception/conelevel.md`：各请求带 Version；通路失败关 QUIC；Inquire 收集不够下限返回错误。
 - `conception/keepalive.md`：Stream 模式；`STUN:Live.Port` / `STUN:Live` 带 Version。
 
 ## 开放问题 （Open Questions）

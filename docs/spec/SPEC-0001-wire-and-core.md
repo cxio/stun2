@@ -3,11 +3,11 @@
 ## 来源追溯
 
 - `conception/pubaddr.md`：地址为 IPv6 形式，IPv4 用 IPv4-mapped；Version 初始值 1；不符则错误。
-- `conception/conelevel.md`：SN 构造、Cone 首字节来源位、TmpN、Challenge HMAC、Equi-X 种子为 `SHA256(Challenge || Address || KeyHash)`，调用 `puzz.Solve` / `puzz.Verify`；起始 nonce 为 13。
-- `conception/keepalive.md`：Live SN 首字节、双向 domainTag、Validation HMAC、时间戳 ULEB128。
+- `conception/conelevel.md`：SN 构造、Cone 首字节来源位、TmpN、Challenge HMAC（含域标签 `STUN:Cone.Challenge`）、Equi-X 种子为 `SHA256(Challenge || Address || KeyHash)`，调用 `puzz.Solve` / `puzz.Verify`；起始 nonce 为 13；Inquire 收集 7s / 客户端等待 11s。
+- `conception/keepalive.md`：Live SN 首字节、双向 domainTag、Validation HMAC、时间戳 ULEB128；静默间隔下限 10s（低于则按 10s 测一次）。
 - `DEC-0001`：`stun2` 为纯函数与编解码，无网络 IO；TmpN 默认可注入；Equi-X 只组装输入并调用 `github.com/cxio/equix-cgo/puzz`。
 - `DEC-0002`：信封为方法名 + Version + 载荷；每请求一条 Stream；失败可区分；数值错误码与字节布局由本 Spec 钉死。
-- `DEC-0003`：判定矩阵五种终态的纯函数落在根包；`UDP Blocked` / `Unknown` 不出现。
+- `DEC-0003`：判定矩阵五态（`ConeKind`）的纯函数落在根包；一次调用的 `ConeResult`（含提前终态）见 SPEC-0003；`UDP Blocked` / `Unknown` 不出现。
 - Equi-X 接口以 [cxio/equix-cgo/puzz](https://github.com/cxio/equix-cgo/tree/main/puzz) 为准，模块路径 `github.com/cxio/equix-cgo/puzz`。
 
 
@@ -122,10 +122,10 @@ type TmpNFunc func() ([]byte, error)
 ```
 ts     = uint64(now.UnixNano())
 expire = ts + uint64(ttl)          // ttl 为 time.Duration，纳秒数
-Challenge = ULEB128(ts) || HMAC_SHA256(DelegateKey, ServAddr18 || ULEB128(expire))
+Challenge = ULEB128(ts) || HMAC_SHA256(DelegateKey, "STUN:Cone.Challenge" || ServAddr18 || ULEB128(expire))
 ```
 
-校验：`ts = ULEB128 前缀`；`expire = ts + uint64(受托自己的 ttl)`；`now.UnixNano() > expire` 则过期；HMAC 与 `ServAddr18`（当前 QUIC 对端规范化）重算比对。`ServAddr` 是受托眼中的**源服务器**地址。
+校验：`ts = ULEB128 前缀`；`expire = ts + uint64(受托自己的 ttl)`；`now.UnixNano() > expire` 则过期；HMAC 与 `ServAddr18`（当前 QUIC 对端规范化）及域标签 `STUN:Cone.Challenge` 重算比对。`ServAddr` 是受托眼中的**源服务器**地址。
 
 **Live Validation**（Unix **秒**）：
 
@@ -193,7 +193,7 @@ type Solution struct {
 func ClassifyCone(newPort, newHost, localEqual bool) ConeKind
 ```
 
-`ConeKind` 仅含：`FullCone`、`RC`、`PRC`、`OpenInternet`、`UDPFirewall`。矩阵见 SPEC-0003，与 DEC-0003 / `conelevel.md` 一致。`Sym-Like`、`QUIC Only` 由客户端状态机直接得出，不进入本函数。
+`ConeKind` **仅含**矩阵五态：`FullCone`、`RC`、`PRC`、`OpenInternet`、`UDPFirewall`。矩阵见 SPEC-0003，与 DEC-0003 / `conelevel.md` 一致。`SymLike`、`QUICOnly` 不是本类型的合法值，由客户端状态机直接写入 `ConeResult`（SPEC-0003），不进入本函数。根包不导出一次调用的联合结果类型。
 
 ### 10. 常量
 
@@ -205,10 +205,12 @@ func ClassifyCone(newPort, newHost, localEqual bool) ConeKind
 | Passage 客户端/服务端超时 | 4s / 6s |
 | Passage 探测包 | 2 个，间隔 100–300ms |
 | NewPort 探测包 | 4 个，间隔 100–400ms |
-| Live 收包超时（自发出 `STUN:Live` 请求） | 10s |
+| Inquire 收集超时（源服务器） | 7s |
+| Inquire 客户端等待挑战集 | 11s |
+| Live 收包超时（自发出 `STUN:Live` 请求） | 10s（须覆盖发送表 7.9s + 余量） |
 | Live 同一 Address 最小间隔 | 10s |
 | Live 发送间隔表 (ms) | 100, 200, 400, 800, 1600, 1600, 1600, 1600（累计 7.9s） |
-| 粗测起始间隔下限 | 10s |
+| Live 每一次静默间隔下限 | 10s（含起始值与失败回退；算出值低于 10s 则按 10s 测一次，该次再失败则停止） |
 | Validation `Distance` 上限 | 45 分钟（2700s） |
 | Key32 / HMAC / SHA256 | 32 字节 |
 | Equi-X 达标成功率 `defaultRatio` | 0.1（`puzz.FromProbability`，不可配置） |
@@ -222,18 +224,17 @@ func ClassifyCone(newPort, newHost, localEqual bool) ConeKind
 | 名称 | 默认 |
 |------|------|
 | 预探测成功 `STUN:Addr` 数 | 3（不少于 3） |
-| Inquire 抽选数 | 3（范围 2–3） |
-| Inquire 收集超时 | 10s |
 | 挑战 TTL | 2 分钟 |
 | Cone 客户端回包超时 | 6s |
 | 每台受托 NewHost 包数 | 3（上限 3，可向下配） |
 | Live 单轮发包数 | 8（上限 8，可向下配，取间隔表前缀） |
 
-粗测起始间隔**无默认值**，调用方必填，且 ≥ 10s。
+粗测起始间隔**无默认值**，调用方必填，且 ≥ 10s。算出的 `next` 低于 10s 时取 10s 测一次；若该次再失败（或 `Start=10s` 的首次已失败），停止：有最后一次成功则用之，否则报告失败。不得在 10s 上反复迭代。本库不报告短于 10s 的存活期。
 
 **domainTag 字符串（精确）：**
 
 - Cone SN：`STUN:Cone`
+- Cone Challenge HMAC：`STUN:Cone.Challenge`
 - Live SN 服务端：`Server@STUN:Live`
 - Live SN 客户端：`Client@STUN:Live`
 - Validation HMAC：`STUN:Live.Port`
@@ -246,7 +247,7 @@ func ClassifyCone(newPort, newHost, localEqual bool) ConeKind
 | 地址 | `Addr`、`Normalize`、18 字节编解码、三种比较 |
 | SN | Cone/Live 首字节盖戳、`BuildSN`、`VerifySN`、默认与可注入 `TmpNFunc` |
 | 证明 | `IssueChallenge`、`VerifyChallenge`、`IssueValidation`、`VerifyValidation`、`KeyHash`、`EquixSeed`（SHA-256 拼接）、`SolvePuzzle` / `VerifyPuzzle` 薄封装（固定 `threshold`，起始 nonce `13`） |
-| 判定 | `ClassifyCone`、`ConeKind` |
+| 判定 | `ClassifyCone`、`ConeKind`（仅五态；一次调用的 `ConeResult` 在 `stun2/client`） |
 | 常量 | 第 10 节全部导出 |
 
 根包**不得**导入 `quic-go`，不得做网络、计时、重试、节点发现。

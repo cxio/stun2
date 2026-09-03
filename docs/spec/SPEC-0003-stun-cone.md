@@ -5,7 +5,7 @@
 - `conception/conelevel.md` 全文。
 - `DEC-0001`：连接所有权、裸 UDP 读取权、状态机 + Runner、一次调用一个地址族、受托池只定义接口、正式探测必须 `ListenUDP`。
 - `DEC-0002`：统一信封；通路失败只关连接。
-- `DEC-0003`：一次调用终态；挑战至少 2 份即可返回；不可达不暴露内部原因。
+- `DEC-0003`：`ConeKind` / `ConeResult` 类型拆分；收集满 3 立即返回、7s 超时且 ≥2 有效、客户端等待 11s；池须支持持续抽选；不可达不暴露内部原因。
 - `DEC-0005`：源服务器仅允许 Challenge→受托 表；受托按 Target 单一发包去重（闭集第 4 项）；SN 不设重放缓存。
 - SPEC-0001：信封、SN、Challenge HMAC、Equi-X 调用。
 - SPEC-0002：`GetAddr`。
@@ -13,22 +13,22 @@
 
 ## 概述
 
-规定 Cone 预探测、通路、委托询问、正式探测的载荷、两端行为、受托池接口，以及一次调用返回的终态。综合评估、换节点、`UDP Blocked` 不在库内。
+规定 Cone 预探测、通路、委托询问、正式探测的载荷、两端行为、受托池接口，以及一次调用返回的 `ConeResult`。综合评估、换节点、`UDP Blocked` 不在库内。
 
 
 ## 规格正文
 
 ### 1. 一次调用的终态
 
-`stun2/client` 一次 Cone 探测返回下列之一（无 `UDP Blocked`、无 `Unknown`）：
+`stun2/client` 一次 Cone 探测返回 `ConeResult`（无 `UDP Blocked`、无 `Unknown`）。前置两态可提前给出并结束调用；矩阵五态只在正式探测得出。
 
-| 值 | 阶段 |
-|----|------|
-| `SymLike` | 预探测：不少于配置数的 `STUN:Addr` 中，端口不全相同 |
-| `QUICOnly` | Passage：确认后超时未收到有效 Passage SN |
-| `FullCone` / `RC` / `PRC` / `OpenInternet` / `UDPFirewall` | 正式探测矩阵 |
+| 值 | 类型 | 阶段 |
+|----|------|------|
+| `SymLike` | 仅 `ConeResult` | 预探测：不少于配置数的 `STUN:Addr` 中，端口不全相同；提前终止 |
+| `QUICOnly` | 仅 `ConeResult` | Passage：确认后超时未收到有效 Passage SN；提前终止 |
+| `FullCone` / `RC` / `PRC` / `OpenInternet` / `UDPFirewall` | `ConeKind` ⊂ `ConeResult` | 正式探测矩阵 |
 
-正式探测前的其它失败（拨号、Inquire 受托不足、Equi-X 无解、控制面 Status≠0、ctx 取消）用 `error` 返回，不伪造类型。
+`ConeKind` 是根包 `ClassifyCone` 的值域，**不含** `SymLike` / `QUICOnly`。正式探测前的其它失败（拨号、Inquire 受托不足、Equi-X 无解、控制面 Status≠0、ctx 取消）用 `error` 返回，不伪造类型，也不把提前终态放进 `error`。
 
 `ClassifyCone(newPort, newHost, localEqual)`：
 
@@ -40,7 +40,7 @@
 | * | Y | Y | OpenInternet |
 | * | N | Y | UDPFirewall |
 
-NewPort / NewHost 在超时前零有效包、校验失败、超时，一律视为该路径不可达（N）。不向调用方暴露这三种内部原因。
+NewPort / NewHost 在超时前零有效包、校验失败、超时，一律视为该路径不可达（N）。不向调用方暴露这三种内部原因。NewHost 超时且 NewMap.N 不单独定论，由 NewPort 行判定 `RC` / `PRC`（与构想综合判断末条一致）。
 
 NewHost 先到且已能判定时，可提前结束 NewPort 等待。
 
@@ -104,7 +104,7 @@ Nonce        u64 大端     soln.Nonce
 
 #### 3.3 询问与创建映射
 
-- 向任意一台（源服务器）发 Inquire，取得 2～3 份 Challenge。
+- 向任意一台（源服务器）发 Inquire。自**发出该请求**起 **11s**（硬编码）内须收到 Status=0 且 Count∈{2,3} 的挑战集；超时或 `InsufficientTrustees` 等 Status≠0 为 error，不伪造 `ConeResult`。
 - **必须** `net.ListenUDP` 新未连接 Socket（不可 `DialUDP`），在其上建到**该源服务器**的新 QUIC，再 `GetAddr`，得到 `ClientAddr`，并开始读非 QUIC 包。
 - `localEqual`（NewMap）由新映射与新 Socket 本机地址比较**得出**（正式探测与预探测映射相互独立；预探测不做本机比较，见 §3.1）。本机地址须为实际网卡通讯 IP，禁止通配地址 `0:0:0:0`/`[::]`（同 SPEC-0002 注意）。
 
@@ -142,7 +142,9 @@ type Delegate interface {
 }
 
 type TrusteePool interface {
-    Pick(n int) ([]Delegate, error) // n∈[2,3]；不足则 error
+    // Pick 随机抽选至多 n 个当前可用、且 PeerAddr 不在 exclude 中的受托。
+    // 返回 0..n 个；不足 n 不报错。仅当池不可用（未注入）时返回 error。
+    Pick(n int, exclude []stun2.Addr) ([]Delegate, error)
 }
 ```
 
@@ -150,8 +152,15 @@ type TrusteePool interface {
 
 #### 4.2 Inquire
 
-池为 nil、`Pick` 失败或活节点 < 2：立即 `InsufficientTrustees`。
-否则 `Pick(N)`（N 默认 3，范围 2–3），对抽中的受托并发 `Challenge`。收集超时（默认 10s）内凑齐**至少 2** 份即向客户端返回，不必等满 N。不足 2 份：`InsufficientTrustees`。
+池为 nil 或 `Pick` 返回 error：立即 `InsufficientTrustees`。
+
+否则在截止时刻 `now+7s`（硬编码，不可配置）内持续抽选并并发 `Challenge`：
+
+1. 已收集 **3** 份：立即向客户端返回（不必等到 7s）。
+2. 对尚未尝试（exclude = 已成功 + 已失败/拒绝 + 仍在途）的节点 `Pick`，建议每次 `n = 3-已收集数`（也可一次多抽以竞速）；对返回的受托发 `Challenge`。
+3. `Pick` 返回空且无在途请求：不再抽选，等待截止（或已有在途则等其结束）。
+4. 到达 7s：已有 **≥2** 份则返回已收集的 2 或 3 份；否则 `InsufficientTrustees`。
+5. **禁止**在满 2 份但未满 3、且未到截止时提前返回。
 
 每写入一份 Challenge，在短暂表登记 `Challenge → Delegate`（或对等的受托寻址信息）。
 
@@ -211,8 +220,12 @@ type Material struct {
     Transport *quic.Transport // 可选；非空则由应用 Push 裸 UDP
 }
 
-func RunCone(ctx context.Context, preProbe []Material, passage, inquire Material, cfg ConeConfig) (ConeKind, error)
+type ConeResult int // SymLike, QUICOnly, 以及与 ConeKind 对应的五态；不是 ConeKind
+
+func RunCone(ctx context.Context, preProbe []Material, passage, inquire Material, cfg ConeConfig) (ConeResult, error)
 ```
+
+`RunCone` 不得返回 `ConeKind`。`SymLike` / `QUICOnly` 在对应阶段直接作为 `ConeResult` 返回并结束调用。
 
 `passage` / `inquire` 若零值，使用 `preProbe[0]`。`preProbe` 必须指向同一本地端口上的材料（同一 Transport 或库为此次预探测建的共享 `ListenUDP`）。
 
@@ -244,6 +257,6 @@ PushNonQUICPacket(pkt []byte, from net.Addr)
 ## 对 Plan 的约束
 
 - 依赖 SPEC-0001、SPEC-0002。
-- TDD 顺序建议：Challenge 签发/校验 → Equi-X 往返（cgo）→ SN 来源位与假冒过滤 → `ClassifyCone` → 服务端 Inquire 收集（满 2 即返回）→ 客户端状态机（替身 Transport / 注入包）→ Runner。
+- TDD 顺序建议：Challenge 签发/校验 → Equi-X 往返（cgo）→ SN 来源位与假冒过滤 → `ClassifyCone`（五态）→ `Pick` 在 exclude 后可返回 0 个且不报错 → 服务端 Inquire 收集（满 3 立即返回；7s 超时且 2 份成功；满 2 未到截止不得返回）→ 客户端 Inquire 11s 超时为 error → 客户端状态机（`SymLike`/`QUICOnly` 提前终止；替身 Transport / 注入包）→ Runner（返回 `ConeResult`）。
 - 正式探测路径的测试必须使用未连接 UDP（或模拟其「接受未知源 IP」的行为）；禁止用已 `DialUDP` 的替身冒充正式探测。
 - 受托池用假对象：记录 `Challenge` / `NewHost` 调用次数与参数。

@@ -62,7 +62,7 @@
 |------------|------------|------------|
 | DEC-0001 | `DEC-0001-layer-boundaries.md` | 三层职责与包边界：连接所有权、裸 UDP 读取、驱动模型、一次调用范围 |
 | DEC-0002 | `DEC-0002-control-plane-rpc.md` | 控制面信封、每请求一条 Stream、失败可区分；通路失败只关连接 |
-| DEC-0003 | `DEC-0003-cone-result-set.md` | ConeKind（矩阵五态）与 ConeResult（含提前终态）拆分；QUIC Only 归属；Pick 收集下限 2 |
+| DEC-0003 | `DEC-0003-cone-result-set.md` | ConeKind（矩阵五态）与 ConeResult（含提前终态）拆分；QUIC Only 归属；Inquire 收集满 3 / 超时 7s 下限 2 |
 | DEC-0004 | `DEC-0004-live-silent-path.md` | Live 关 Conn 后旧路径只读裸 UDP，抑制 Stateless Reset；首次 Time.0 在关闭残留结束后；服务端禁发从观测 Conn closing 至下次 Live |
 | DEC-0005 | `DEC-0005-ephemeral-state.md` | 服务端允许的短暂表闭集；Live 10s 限速键为被测 Address |
 
@@ -97,7 +97,7 @@ Live 控制通道与被测映射的地址关系、取消预环境验证，已写
 |------------|------------|------------|
 | SPEC-0001 | `SPEC-0001-wire-and-core.md` | 控制信封、错误码、地址、SN、HMAC/时间窗、Equi-X 调用、`stun2` 导出 |
 | SPEC-0002 | `SPEC-0002-stun-addr.md` | `STUN:Addr` 载荷与两端行为 |
-| SPEC-0003 | `SPEC-0003-stun-cone.md` | Passage / Inquire / Challenge / Cone / NewHost、判定矩阵、`ConeResult`/`Pick`、受托池接口 |
+| SPEC-0003 | `SPEC-0003-stun-cone.md` | Passage / Inquire / Challenge / Cone / NewHost、判定矩阵、`ConeResult`、Inquire 收集（满 3 / 7s / 11s）、受托池接口 |
 | SPEC-0004 | `SPEC-0004-stun-live.md` | Live.Port / Live、静默路径、粗测/精测、短暂表 |
 
 维护规则：
