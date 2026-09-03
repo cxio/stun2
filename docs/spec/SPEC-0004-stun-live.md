@@ -6,14 +6,14 @@
 - `DEC-0001`：状态机 + Runner；一次调用一个地址族；库按流程建连与关连；不持久化粗测进度。
 - `DEC-0002`：`STUN:Live.Port` / `STUN:Live` 共用信封。
 - `DEC-0004`：旧路径保留 Transport，只读裸 UDP；抑制 Stateless Reset；首次 `Time.0` 在关闭残留之后；服务端禁发从观测 Conn closing 至下次被接受的 `STUN:Live`（含首次窗）；等待用实现内部 PTO。
-- `DEC-0005`：服务端短暂表闭集中与本服务相关的两项——Key32 发送窗、按被测 Address 的 10s 限速。
+- `DEC-0005`：Key32 发送窗、按被测 Address 的 10s 限速。
 - SPEC-0001：信封、SN、Validation HMAC、常量。
 - SPEC-0002：地址观测语义；本服务用 `STUN:Live.Port` 而非 `STUN:Addr` 取批条。
 
 
 ## 概述
 
-规定存活期探测的载荷、静默路径、服务端短暂表，以及粗测 / 精测状态机。控制通道不必与被测映射同公网 IP。控制连接断开则丢弃本轮，不把上次成功间隔记为存活期。
+规定存活期探测的载荷、静默路径、服务端短暂表，以及粗测 / 精测状态机。控制通道不必与被测映射同公网 IP。控制连接断开则丢弃本轮，不把上次成功间隔记为存活期。超时与间隔表见 SPEC-0001 §10。
 
 
 ## 规格正文
@@ -56,15 +56,17 @@ Validation   u16+字节     按 Address 与 min(Distance, 2700) 重签
 
 #### 2.1 预探测
 
-`DialUDP`（或等价已连接 Socket）建 QUIC，发 `STUN:Live.Port`。`ClientAddr` 与本机源地址 `Equal` → 结束，结果为「无需测存活期」（Open Internet | UDP Firewall），不进入正式探测。本机源地址须为实际网卡通讯 IP，禁止通配地址（同 SPEC-0002 注意）。否则暂存 `ClientAddr` 与 `Validation`。
+`DialUDP`（或等价已连接 Socket）建 QUIC，发 `STUN:Live.Port`。`ClientAddr` 与本机源地址 `Equal` → 结束，结果为「无需测存活期」（Open Internet | UDP Firewall），不进入正式探测。本机源地址须为实际网卡通讯 IP，禁止通配地址（同 SPEC-0002）。否则暂存 `ClientAddr` 与 `Validation`。
 
 #### 2.2 Step.1 静默旧路径（硬不变量）
 
+DEC-0004 的取舍在此映射为步骤：
+
 1. 对旧 `quic.Conn` 调用 `CloseWithError`（必须发出 `CONNECTION_CLOSE`），不得只 `Transport.Close()` / 本地 destroy。
 2. **保留**旧 `quic.Transport`，不再对该 Transport `Dial` / `Listen` / `AddPath`。
-3. 构造该 Transport 时 **`StatelessResetKey` 必须为 nil**（quic-go：未配置则不发 Stateless Reset）。库创建的探测 Transport 一律不设此字段。应用注入的 Transport 若已设置 key，不得用于 `STUN:Live` 旧路径（Runner 应拒绝或要求调用方提供未设 key 的 Transport）。
+3. 构造该 Transport 时 **`StatelessResetKey` 必须为 nil**。库创建的探测 Transport 一律不设此字段。应用注入的 Transport 若已设置 key，不得用于 `STUN:Live` 旧路径（Runner 应拒绝或要求调用方提供未设 key 的 Transport）。
 4. `quic.Config.DisablePathMTUDiscovery = true`，避免额外 UDP。
-5. 等待关闭残留结束（见 §2.3），**然后**记录首次 `Time.0`。
+5. 等待关闭残留结束（§2.3），**然后**记录首次 `Time.0`。
 6. 此后旧路径只调用 `ReadNonQUICPacket()`（应用注入 Transport 时经 `PushNonQUICPacket` 投递，见 SPEC-0003 §5）。从 `Time.0` 到本轮结束，对该四元组抓包：除服务端 SN 与客户端对 SN 的回应外，不应出现其它 UDP 载荷（含 `CONNECTION_CLOSE`）。
 
 新控制通道：新随机端口向同一节点拨号，正常 keep-alive。换网或控制连接断开：丢弃本轮，不产出存活期；若继续，从 §2.1 重新开始。
@@ -84,7 +86,7 @@ quic 实现对已关闭连接的 `CONNECTION_CLOSE` 重传窗口为 `3*PTO`。�
 
 #### 2.4 Step.2 请求与收包
 
-到达探测间隔后，在新 QUIC 上发 `STUN:Live`。客户端自**发出该 `STUN:Live` 请求**起 **10s**（硬编码）内若无有效服务端 SN，判定映射已失效。不以收到新 Validation 为起点：服务端发完 Validation 即发 SN，裸 UDP 的 SN 可能先期抵达（构想「状态判断」注记）。
+到达探测间隔后，在新 QUIC 上发 `STUN:Live`。客户端自**发出该 `STUN:Live` 请求**起 10s 内若无有效服务端 SN，判定映射已失效。不以收到新 Validation 为起点：服务端发完 Validation 即发 SN，裸 UDP 的 SN 可能先期抵达。
 
 收到服务端 SN（`VerifySN`，tag=`Server@STUN:Live`，Key=本轮 Key32）后立即回一个客户端 SN（tag=`Client@STUN:Live`，同一 Key32，新 Rnd16/TmpN）。最多回 8 次（与服务端发送上限一致）。每次有效回包更新 `Time.0`。
 
@@ -92,15 +94,17 @@ quic 实现对已关闭连接的 `CONNECTION_CLOSE` 重传窗口为 `3*PTO`。�
 
 ### 3. 粗测与精测
 
-间隔单位与比较用 `time.Duration`。起始间隔 `Start` **必填**，`< 10s` 为配置错误。每一次探测的静默间隔不得低于 10s（含 `Start` 与失败回退的 `Start/2`）。本库不报告短于 10s 的存活期。
+间隔单位与比较用 `time.Duration`。下列规则全程适用（含精测各点）：
 
-算出的 `next` 若 **≥ 10s**，按该值测。若 **< 10s**：取 **10s 本身再测一次**；该次再失败则停止——有 `lastSuccess` 则以其为存活期，否则 error（明确原因：无法在 ≥10s 间隔上测得存活期）。`Start=10s` 且该次已失败时，回退必低于 10s，**不再把 10s 测第二遍**，直接按上一句「再失败」处理（无 `lastSuccess` → error）。**不得**把间隔钳在 10s 上反复迭代直到次数上限。
+- 起始间隔 `Start` **必填**，`< 10s` 为配置错误。
+- 每一次探测的静默间隔不得低于 10s。本库不报告短于 10s 的存活期。
+- 算出的 `next` 若 ≥ 10s，按该值测。若 < 10s：取 **10s 本身再测一次**；该次再失败则停止——有 `lastSuccess` 则以其为存活期，否则 error（无法在 ≥10s 间隔上测得存活期）。
+- `Start=10s` 且该次已失败时，回退必低于 10s，**不再把 10s 测第二遍**，直接按上一句「再失败」处理（无 `lastSuccess` → error）。
+- **不得**把间隔钳在 10s 上反复迭代直到次数上限。
+- 精测精度 `Precision` 可配，默认 5s，是二分步长的**收敛终止误差**（当本轮 `|step| < Precision` 时做完该次测试即停），不是「可测 5s 量级的存活期」，也不是测得值与真实 NAT 超时的误差上限。
+- 每一次**失败**后的再测必须从 §2.1 重建映射。成功后的下一间隔仍在同一轮（同一旧映射、同一控制通道）上继续 Step.2。
 
-精测精度 `Precision` 可配，默认 5s，是二分步长的**收敛终止误差**（当本轮 `|step| < Precision` 时做完该次测试即停），不是「可测 5s 量级的存活期」，也不是测得值与真实 NAT 超时的误差上限。精测各点同样适用上段下限（与构想「与粗测同规则」）。
-
-**粗测：**
-
-记 `lastSuccess`、`lastFail`、`step`。第一次探测间隔为 `Start`。
+**粗测：** 记 `lastSuccess`、`lastFail`、`step`。第一次探测间隔为 `Start`。
 
 - 成功：`lastSuccess = current`；`step = current`；`next = 2*current`。
 - 失败：`raw = current - step/2`（首次即失败时视 `step = Start`，故 `raw = Start/2`）；`step = step/2`；`lastFail = current`。再按本节开头的下限规则得到 `next` 或停止。
@@ -108,7 +112,6 @@ quic 实现对已关闭连接的 `CONNECTION_CLOSE` 重传窗口为 `3*PTO`。�
 - **结束（正常）：** 出现「失败 → 成功」后，结果为最后一次成功间隔。
 - **结束（下限停）：** 因 `next < 10s` 而按 10s 补测仍失败，或 `Start=10s` 首次失败：有 `lastSuccess` 则取之，否则 error。
 - **结束（迭代上限）：** 可配置次数上限（默认不限制或由调用方设）。到达上限仍无「失败→成功」则取 `lastSuccess`；若从未成功，返回 error（配置过高或异常，换节点由应用决定）。
-- 每一次**失败**后的再测必须从 §2.1 重建映射。成功后的下一间隔仍在同一轮（同一旧映射、同一控制通道）上继续 Step.2。
 
 **精测**（可与粗测不同服务器；必须从 §2.1 起新的一轮）：
 
@@ -125,7 +128,7 @@ quic 实现对已关闭连接的 `CONNECTION_CLOSE` 重传窗口为 `3*PTO`。�
   若 current < 10s：current = 10s（按 10s 再测一次，适用上段「再失败则停」）
 ```
 
-与构想示例一致：会执行那次 `step < Precision` 的测试，再停。结果为精测过程中最后一次成功；若精测从未成功，结果为 `n`。失败后同样回 §2.1。
+与构想示例一致：会执行那次 `step < Precision` 的测试，再停。结果为精测过程中最后一次成功；若精测从未成功，结果为 `n`。
 
 粗测因一直成功触达上限、没有 `M` 时，不能进入精测；Runner 返回粗测上限结果并标明未收敛。
 
@@ -152,11 +155,12 @@ quic 实现对已关闭连接的 `CONNECTION_CLOSE` 重传窗口为 `3*PTO`。�
 
 #### 4.3 服务端静默
 
-自「以该 Address 为 `RemoteAddr` 的 `quic.Conn` 进入 closing」起，到「本轮下一次 `STUN:Live` 被接受并开始发 SN」止（**含** Live.Port 之后、首次 `STUN:Live` 之前），不得向该 Address 发送任何包（QUIC 重传、路径探测、Reset、SN、定时 `CONNECTION_CLOSE`）。唯一例外：收到客户端 `CONNECTION_CLOSE` 后允许当场回一个 `CONNECTION_CLOSE`，然后停写。closing 重传须为收包触发；不得依赖 draining 定时器对该 Address 继续发包。被测映射在窗口内不是活跃 QUIC 连接。不为此新增短暂表。
+禁发范围见 DEC-0004 第 4 条。实现要点：
 
-共享 Listener **不得**设置 `StatelessResetKey`（否则误入的 QUIC 形包可能向 Address 发 Reset，续活映射）。应用注入的 server Transport 同样必须 key 为 nil，否则不得声称符合 `STUN:Live`。该端口上所有 QUIC 连接因此没有 Stateless Reset。
-
-处理循环不得把其它连接的重传发到被测 Address。
+- 不得向该 Address 发送任何包（QUIC 重传、路径探测、Reset、SN、定时 `CONNECTION_CLOSE`），唯一例外为当场回一个 `CONNECTION_CLOSE`。
+- closing 重传须为收包触发；不得依赖 draining 定时器对该 Address 继续发包。被测映射在窗口内不是活跃 QUIC 连接。不为此新增短暂表。
+- 共享 Listener **不得**设置 `StatelessResetKey`。应用注入的 server Transport 同样必须 key 为 nil，否则不得声称符合 `STUN:Live`。该端口上所有 QUIC 连接因此没有 Stateless Reset。
+- 处理循环不得把其它连接的重传发到被测 Address。
 
 ### 5. 客户端 API
 
@@ -178,7 +182,7 @@ type LiveResult struct {
 func RunLive(ctx context.Context, server Material, cfg LiveConfig) (LiveResult, error)
 ```
 
-状态机可单步推进（预探测 / 关旧连 / 等待残留 / 等间隔 / 请求 / 收包 / 粗测更新 / 精测更新）。Runner 用库内计时跑完；`ctx` 取消则停止，不写盘。
+`Material` 见 SPEC-0003 §5。状态机可单步推进（预探测 / 关旧连 / 等待残留 / 等间隔 / 请求 / 收包 / 粗测更新 / 精测更新）。Runner 用库内计时跑完；`ctx` 取消则停止，不写盘。
 
 控制连接断开：本轮无存活期，error 或 `Kind` 可区分「中止」与「测到失效」。**映射超时**用上一次成功间隔作为结果；**控制断开**不使用该间隔。
 

@@ -5,15 +5,15 @@
 - `conception/conelevel.md` 全文。
 - `DEC-0001`：连接所有权、裸 UDP 读取权、状态机 + Runner、一次调用一个地址族、受托池只定义接口、正式探测必须 `ListenUDP`。
 - `DEC-0002`：统一信封；通路失败只关连接。
-- `DEC-0003`：`ConeKind` / `ConeResult` 类型拆分；收集满 3 立即返回、7s 超时且 ≥2 有效、客户端等待 11s；池须支持持续抽选；不可达不暴露内部原因。
-- `DEC-0005`：源服务器仅允许 Challenge→受托 表；受托按 Target 单一发包去重（闭集第 4 项）；SN 不设重放缓存。
-- SPEC-0001：信封、SN、Challenge HMAC、Equi-X 调用。
+- `DEC-0003`：`ConeKind` / `ConeResult` 类型拆分；池须支持持续抽选；不可达不暴露内部原因。
+- `DEC-0005`：源服务器仅允许 Challenge→受托 表；受托按 Target 单一发包去重；SN 不设重放缓存。
+- SPEC-0001：信封、SN、Challenge HMAC、Equi-X 调用、常量。
 - SPEC-0002：`GetAddr`。
 
 
 ## 概述
 
-规定 Cone 预探测、通路、委托询问、正式探测的载荷、两端行为、受托池接口，以及一次调用返回的 `ConeResult`。综合评估、换节点、`UDP Blocked` 不在库内。
+规定 Cone 预探测、通路、委托询问、正式探测的载荷、两端行为、受托池接口，以及一次调用返回的 `ConeResult`。综合评估、换节点、`UDP Blocked` 不在库内。超时与包数见 SPEC-0001 §10。
 
 
 ## 规格正文
@@ -40,9 +40,7 @@
 | * | Y | Y | OpenInternet |
 | * | N | Y | UDPFirewall |
 
-NewPort / NewHost 在超时前零有效包、校验失败、超时，一律视为该路径不可达（N）。不向调用方暴露这三种内部原因。NewHost 超时且 NewMap.N 不单独定论，由 NewPort 行判定 `RC` / `PRC`（与构想综合判断末条一致）。
-
-NewHost 先到且已能判定时，可提前结束 NewPort 等待。
+NewPort / NewHost 在超时前零有效包、校验失败、超时，一律视为该路径不可达（N）。不向调用方暴露这三种内部原因。NewHost 超时且 NewMap.N 不单独定论，由 NewPort 行判定 `RC` / `PRC`。NewHost 先到且已能判定时，可提前结束 NewPort 等待。
 
 ### 2. 方法载荷
 
@@ -87,26 +85,26 @@ Nonce        u64 大端     soln.Nonce
 
 ### 3. 客户端流程
 
-应用注入连接材料（对端地址、`tls.Config`、可选已有 `quic.Transport`）。库按步骤创建/关闭探测所需 Socket 与 `quic.Conn`。禁止 `AddPath`。库创建的 Transport 由库独占 `ReadNonQUICPacket()`；应用注入的 Transport 由应用读，再调用 `PushNonQUICPacket` 投递给库（签名见 §5）。
+连接材料与裸 UDP 读取权见 DEC-0001。禁止 `AddPath`。库创建的 Transport 由库独占 `ReadNonQUICPacket()`；应用注入的 Transport 由应用读，再调用 `PushNonQUICPacket` 投递给库（§5）。
 
 #### 3.1 预探测
 
 - 复用**同一**底层 `UDPConn`（及同一 `quic.Transport`）向不少于 `MinAddrResults`（默认 3）台服务器并发或紧挨着请求 `STUN:Addr`。
 - 成功数不足配置值：返回 error。
 - 端口不全相同 → `SymLike`，结束。
-- 全部相同：即视为 `非 Sym-Like`，需要进入下一步（正式探测）。
+- 全部相同：视为 `非 Sym-Like`，进入通路确认。
 
 #### 3.2 通路
 
-- 向任意一台拨号（可与 Inquire 不同源）。发送 Passage（新 Key32）；裸 UDP 读循环须在发送前启动（`ReadNonQUICPacket` 首次调用前的到达包会被丢弃，见 `MEMORY.md`）。
-- 超时从**收到确认**起 4s（硬编码）。收到有效 Passage SN（`VerifySN`，source=0，`domainTag=STUN:Cone`，Key=该 Key32）即通过。
+- 向任意一台拨号（可与 Inquire 不同源）。发送 Passage（新 Key32）；裸 UDP 读循环须在发送前启动（`ReadNonQUICPacket` 首次调用前的到达包会被丢弃）。
+- 超时从**收到确认**起 4s。收到有效 Passage SN（`VerifySN`，source=0，`domainTag=STUN:Cone`，Key=该 Key32）即通过。
 - 超时：关 QUIC，返回 `QUICOnly`。不发额外控制请求。服务端仍按计划发完 2 个包，客户端已关则丢弃。
 
 #### 3.3 询问与创建映射
 
-- 向任意一台（源服务器）发 Inquire。自**发出该请求**起 **11s**（硬编码）内须收到 Status=0 且 Count∈{2,3} 的挑战集；超时或 `InsufficientTrustees` 等 Status≠0 为 error，不伪造 `ConeResult`。
+- 向任意一台（源服务器）发 Inquire。自**发出该请求**起 11s 内须收到 Status=0 且 Count∈{2,3} 的挑战集；超时或 `InsufficientTrustees` 等 Status≠0 为 error，不伪造 `ConeResult`。
 - **必须** `net.ListenUDP` 新未连接 Socket（不可 `DialUDP`），在其上建到**该源服务器**的新 QUIC，再 `GetAddr`，得到 `ClientAddr`，并开始读非 QUIC 包。
-- `localEqual`（NewMap）由新映射与新 Socket 本机地址比较**得出**（正式探测与预探测映射相互独立；预探测不做本机比较，见 §3.1）。本机地址须为实际网卡通讯 IP，禁止通配地址 `0:0:0:0`/`[::]`（同 SPEC-0002 注意）。
+- `localEqual`（NewMap）由新映射与新 Socket 本机地址比较得出（正式探测与预探测映射相互独立；预探测不做本机比较）。本机地址须为实际网卡通讯 IP，禁止通配地址（同 SPEC-0002）。
 
 #### 3.4 求解与请求
 
@@ -114,7 +112,7 @@ Nonce        u64 大端     soln.Nonce
 
 ```
 seed = SHA256(Challenge || ClientAddr18 || SHA256(Key32))
-soln, err = stun2.SolvePuzzle(ctx, seed)   // 见 SPEC-0001 §8；固定 threshold，nonce 从 13
+soln, err = stun2.SolvePuzzle(ctx, seed)   // SPEC-0001 §8
 ```
 
 将 `[Challenge, soln.Solution 16B, soln.Nonce]` 组成 Proofs，发送 `STUN:Cone`。回包超时从**发送完该请求**起，默认 6s，可配置。
@@ -154,7 +152,7 @@ type TrusteePool interface {
 
 池为 nil 或 `Pick` 返回 error：立即 `InsufficientTrustees`。
 
-否则在截止时刻 `now+7s`（硬编码，不可配置）内持续抽选并并发 `Challenge`：
+否则在截止时刻 `now+7s` 内持续抽选并并发 `Challenge`：
 
 1. 已收集 **3** 份：立即向客户端返回（不必等到 7s）。
 2. 对尚未尝试（exclude = 已成功 + 已失败/拒绝 + 仍在途）的节点 `Pick`，建议每次 `n = 3-已收集数`（也可一次多抽以竞速）；对返回的受托发 `Challenge`。
@@ -170,7 +168,7 @@ type TrusteePool interface {
 - 值：对应 `Delegate`。
 - TTL：可配置，默认 2 分钟（与挑战有效期相同）。
 - `STUN:Cone` 用过即删（该请求里出现的每一份）。
-- 容量建议 4096；插入时先删过期，仍满则拒新 Inquire（`InsufficientTrustees`）或驱逐最旧过期项。不得改为按 Inquire 连接地址索引。
+- 容量建议 4096；插入时先删过期，仍满则拒新 Inquire（`InsufficientTrustees`）或驱逐最旧过期项。
 - 进程重启后表空，进行中的 Cone 失败，客户端换节点或重走 Inquire。
 
 #### 4.4 `STUN:Cone` 处理
@@ -187,13 +185,11 @@ type TrusteePool interface {
 #### 4.5 受托
 
 收到 Challenge：按 SPEC-0001 §7 签发，无存储。
-收到 NewHost：用**当前** QUIC 对端作 `ServAddr` 验 Challenge；`VerifyPuzzle(SHA256(Challenge||Target||KeyHash), &puzz.Solution{Nonce, Solution})`；失败回 `VerifyFailed`。通过则查 Target 去重表（§4.6）：首次接受即向 Target 发 SN（`source=2`，`Key=KeyHash`，默认 3 个，间隔 100–500ms）；重复到达静默丢弃，不发包，响应仍为空成功（不向重放方反馈内部状态）。
+收到 NewHost：用**当前** QUIC 对端作 `ServAddr` 验 Challenge；`VerifyPuzzle(SHA256(Challenge||Target||KeyHash), &puzz.Solution{Nonce, Solution})`；失败回 `VerifyFailed`。通过则查 Target 去重表（§4.6）：首次接受即向 Target 发 SN（`source=2`，`Key=KeyHash`，默认 3 个，间隔 100–500ms）；重复到达静默丢弃，不发包，响应仍为空成功。
 
-Passage：回确认后 6s 内发完 2 个包（服务端超时硬编码）。`Key=请求 Key32`，`source=0`。
+Passage：回确认后 6s 内发完 2 个包。`Key=请求 Key32`，`source=0`。
 
 #### 4.6 Target 单一发包去重表（DEC-0005 闭集第 4 项）
-
-实现构想「单一发包」：同一 Target 的 NewHost 在去重表有效期内只接受一次委托发包。
 
 - 键：Target（18 字节线格式）；不按 Challenge 或源服务器地址索引（换 Challenge 重放同一目标同样被抑制）。
 - 值：到期时间。

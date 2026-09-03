@@ -2,18 +2,18 @@
 
 ## 来源追溯
 
-- `conception/pubaddr.md`：地址为 IPv6 形式，IPv4 用 IPv4-mapped；Version 初始值 1；不符则错误。
-- `conception/conelevel.md`：SN 构造、Cone 首字节来源位、TmpN、Challenge HMAC（含域标签 `STUN:Cone.Challenge`）、Equi-X 种子为 `SHA256(Challenge || Address || KeyHash)`，调用 `puzz.Solve` / `puzz.Verify`；起始 nonce 为 13；Inquire 收集 7s / 客户端等待 11s。
-- `conception/keepalive.md`：Live SN 首字节、双向 domainTag、Validation HMAC、时间戳 ULEB128；静默间隔下限 10s（低于则按 10s 测一次）。
+- `conception/pubaddr.md`：地址为 IPv6 形式，IPv4 用 IPv4-mapped；Version 初始值 1。
+- `conception/conelevel.md`：SN 构造、Cone 首字节来源位、TmpN、Challenge HMAC（域标签 `STUN:Cone.Challenge`）、Equi-X 种子 `SHA256(Challenge || Address || KeyHash)`，调用 `puzz.Solve` / `puzz.Verify`；起始 nonce 13；Inquire 收集 7s / 客户端等待 11s。
+- `conception/keepalive.md`：Live SN 首字节、双向 domainTag、Validation HMAC、时间戳 ULEB128；静默间隔下限 10s。
 - `DEC-0001`：`stun2` 为纯函数与编解码，无网络 IO；TmpN 默认可注入；Equi-X 只组装输入并调用 `github.com/cxio/equix-cgo/puzz`。
-- `DEC-0002`：信封为方法名 + Version + 载荷；每请求一条 Stream；失败可区分；数值错误码与字节布局由本 Spec 钉死。
-- `DEC-0003`：判定矩阵五态（`ConeKind`）的纯函数落在根包；一次调用的 `ConeResult`（含提前终态）见 SPEC-0003；`UDP Blocked` / `Unknown` 不出现。
-- Equi-X 接口以 [cxio/equix-cgo/puzz](https://github.com/cxio/equix-cgo/tree/main/puzz) 为准，模块路径 `github.com/cxio/equix-cgo/puzz`。
+- `DEC-0002`：信封为方法名 + Version + 载荷；每请求一条 Stream；失败可区分。
+- `DEC-0003`：判定矩阵五态（`ConeKind`）的纯函数落在根包；一次调用的 `ConeResult` 见 SPEC-0003。
+- Equi-X 接口以 [cxio/equix-cgo/puzz](https://github.com/cxio/equix-cgo/tree/main/puzz) 为准。
 
 
 ## 概述
 
-本 Spec 规定所有控制面共用的线格式、错误码、地址与 SN 公共构造、Challenge / Validation 的 HMAC 与时间窗，以及根包 `stun2` 的导出符号。方法各自的 Payload 与状态机见 SPEC-0002～0004。
+规定所有控制面共用的线格式、错误码、地址与 SN、Challenge / Validation 的 HMAC 与时间窗、协议常量，以及根包 `stun2` 的导出。方法各自的 Payload 与状态机见 SPEC-0002～0004。
 
 
 ## 规格正文
@@ -111,7 +111,7 @@ Cone 的 NewHost 使用 `Key = SHA256(Key32)`，其余 Cone 探测使用 `Key32`
 type TmpNFunc func() ([]byte, error)
 ```
 
-注入函数返回越界或错误则构造失败，不静默裁剪。Cone 探测包不做客户端回 SN，也不做 SN 重放缓存；受托侧按 Target 的「单一发包」去重表是另一机制（见 SPEC-0003 §4.6，DEC-0005 闭集第 4 项）。
+注入函数返回越界或错误则构造失败，不静默裁剪。Cone 探测包不做客户端回 SN，也不做 SN 重放缓存；受托侧按 Target 的去重表是另一机制（SPEC-0003 §4.6）。
 
 ### 7. Challenge 与 Validation
 
@@ -140,9 +140,9 @@ Validation = ULEB128(exp) || HMAC_SHA256(BaseKey, "STUN:Live.Port" || IP16 || Po
 
 ### 8. Equi-X
 
-导入 `github.com/cxio/equix-cgo/puzz`。本库不实现 Equi-X，不直接调用 `github.com/cxio/equix-cgo` 根包（含 `Solve` / `SolveWithNonce`、HashWX 变体、自建 `Solver` / `Verifier`）。Nonce 搜索由 `puzz.Solve` / `puzz.SolveContext` 内部完成（步进 `0x26f5`）。
+导入 `github.com/cxio/equix-cgo/puzz`。本库不实现 Equi-X，不直接调用 `github.com/cxio/equix-cgo` 根包（含 `Solve` / `SolveWithNonce`、HashWX 变体、自建 `Solver` / `Verifier`）。Nonce 搜索由 `puzz.Solve` / `puzz.SolveContext` 内部完成（步进 `0x26f5`）。需要 `CGO_ENABLED=1`。
 
-**种子**（传入 `Solve` / `Verify` 的 `challenge` 参数）为 SHA2-256 的 32 字节摘要，用 `crypto/sha256`：
+**种子**（传入 `Solve` / `Verify` 的 `challenge` 参数）为 SHA2-256 的 32 字节摘要：
 
 ```
 KeyHash   = SHA256(Key32)                          // 受托侧直接使用请求中的 KeyHash
@@ -160,42 +160,38 @@ threshold, err := puzz.FromProbability(defaultRatio) // 0.1 合法；包级 init
 
 不用 `puzz.FromBits` / `puzz.DefaultBits`。`FromProbability` 对非法 `p` 返回 error，不得忽略后继续用零值门槛。
 
-**调用**：
+**调用：**
 
 ```go
 soln, err := puzz.SolveContext(ctx, EquixSeed, threshold, 13) // 客户端；起始 nonce 固定为小素数 13
 ok := puzz.Verify(EquixSeed, threshold, soln)                // 源服务器与受托
 ```
 
-`puzz.Solution`：
-
-```go
-type Solution struct {
-    Nonce    uint64
-    Solution equix.Solution // [8]uint16
-}
-```
-
 约定：
 
-- 客户端对每份 Challenge 调用一次 `puzz.SolveContext`，传入本次探测的 `ctx`；起始 nonce 固定为小素数 `13`。库内路径禁止无取消的 `puzz.Solve`（测试可例外）。`err != nil`（含 `ctx` 取消）则本次探测返回 error，不伪造成 NAT 类型。取返回的 `*puzz.Solution`（含 Nonce 与解）。
+- 客户端对每份 Challenge 调用一次 `puzz.SolveContext`，传入本次探测的 `ctx`。库内路径禁止无取消的 `puzz.Solve`（测试可例外）。`err != nil`（含 `ctx` 取消）则本次探测返回 error，不伪造成 NAT 类型。
 - `puzz.Verify` 返回 `false`（哈希未达门槛或 Equi-X 结构不成立；`soln == nil` 亦为 false）在控制面上映射为 `VerifyFailed`。
-- 控制面 **Solution** 16 字节用 `soln.Solution`（`equix.Solution`）的 `MarshalBinary` / `UnmarshalBinary`（little-endian `idx[0]…idx[7]`），不改字节序。
-- 控制面 **Nonce** 为 8 字节**大端** `uint64`（与信封其它整数一致）；传入 `puzz.Solution.Nonce` 时用数值。puzz 内部把 nonce 以 8 字节 little-endian 拼进 Equi-X，不在本库。
-- **禁止**把 `puzz.Solution.MarshalBinary()`（24 字节：LE Nonce + 16 字节解）当作控制面编码；那是 puzz 自己的便利格式，与本协议信封字段布局、Nonce 字节序都不同。
 - 根包薄封装：`SolvePuzzle(ctx, seed)` → `puzz.SolveContext(ctx, seed, threshold, 13)`；`VerifyPuzzle(seed, soln)` → `puzz.Verify(seed, threshold, soln)`。只做 SHA-256 种子拼接、固定 threshold 与起始 nonce，以及这两次调用。
-- 需要 `CGO_ENABLED=1`。
+
+**控制面编码**（与 puzz 自有格式不同）：
+
+`puzz.Solution` 含 `Nonce uint64` 与 `Solution equix.Solution`（`[8]uint16`）。
+
+- **Solution** 16 字节：`soln.Solution` 的 `MarshalBinary` / `UnmarshalBinary`（little-endian `idx[0]…idx[7]`），不改字节序。
+- **Nonce** 8 字节**大端** `uint64`（与信封其它整数一致）；传入 `puzz.Solution.Nonce` 时用数值。puzz 内部把 nonce 以 8 字节 little-endian 拼进 Equi-X，不在本库。
+- **禁止**把 `puzz.Solution.MarshalBinary()`（24 字节：LE Nonce + 16 字节解）当作控制面编码。
 
 ### 9. 判定矩阵（纯函数）
 
 ```go
-// localEqual NewMap 时的本地比较
 func ClassifyCone(newPort, newHost, localEqual bool) ConeKind
 ```
 
-`ConeKind` **仅含**矩阵五态：`FullCone`、`RC`、`PRC`、`OpenInternet`、`UDPFirewall`。矩阵见 SPEC-0003，与 DEC-0003 / `conelevel.md` 一致。`SymLike`、`QUICOnly` 不是本类型的合法值，由客户端状态机直接写入 `ConeResult`（SPEC-0003），不进入本函数。根包不导出一次调用的联合结果类型。
+`ConeKind` **仅含**矩阵五态：`FullCone`、`RC`、`PRC`、`OpenInternet`、`UDPFirewall`。矩阵单元格见 SPEC-0003。`SymLike`、`QUICOnly` 不是本类型的合法值。根包不导出一次调用的联合结果类型。
 
 ### 10. 常量
+
+行为规格引用本表，不另解释取值来源。
 
 **硬编码（不可配置）：**
 
@@ -205,6 +201,7 @@ func ClassifyCone(newPort, newHost, localEqual bool) ConeKind
 | Passage 客户端/服务端超时 | 4s / 6s |
 | Passage 探测包 | 2 个，间隔 100–300ms |
 | NewPort 探测包 | 4 个，间隔 100–400ms |
+| NewHost 探测包间隔 | 100–500ms |
 | Inquire 收集超时（源服务器） | 7s |
 | Inquire 客户端等待挑战集 | 11s |
 | Live 收包超时（自发出 `STUN:Live` 请求） | 10s（须覆盖发送表 7.9s + 余量） |
@@ -213,9 +210,9 @@ func ClassifyCone(newPort, newHost, localEqual bool) ConeKind
 | Live 每一次静默间隔下限 | 10s（含起始值与失败回退；算出值低于 10s 则按 10s 测一次，该次再失败则停止） |
 | Validation `Distance` 上限 | 45 分钟（2700s） |
 | Key32 / HMAC / SHA256 | 32 字节 |
-| Equi-X 达标成功率 `defaultRatio` | 0.1（`puzz.FromProbability`，不可配置） |
-| Equi-X 种子 | SHA-256（SHA-2，32 字节摘要） |
-| Equi-X 起始 nonce | 13（小素数，不可配置） |
+| Equi-X 达标成功率 `defaultRatio` | 0.1（`puzz.FromProbability`） |
+| Equi-X 种子 | SHA-256（32 字节摘要） |
+| Equi-X 起始 nonce | 13（小素数） |
 | TmpN 长度 | 16–1024 |
 | 信封 MethodLen / Payload | 1–64 / ≤8192 |
 
@@ -229,7 +226,7 @@ func ClassifyCone(newPort, newHost, localEqual bool) ConeKind
 | 每台受托 NewHost 包数 | 3（上限 3，可向下配） |
 | Live 单轮发包数 | 8（上限 8，可向下配，取间隔表前缀） |
 
-粗测起始间隔**无默认值**，调用方必填，且 ≥ 10s。算出的 `next` 低于 10s 时取 10s 测一次；若该次再失败（或 `Start=10s` 的首次已失败），停止：有最后一次成功则用之，否则报告失败。不得在 10s 上反复迭代。本库不报告短于 10s 的存活期。
+粗测起始间隔**无默认值**，调用方必填，且 ≥ 10s。算出的 `next` 低于 10s 时取 10s 测一次；若该次再失败（或 `Start=10s` 的首次已失败），停止：有最后一次成功则用之，否则报告失败。不得在 10s 上反复迭代。本库不报告短于 10s 的存活期。算法见 SPEC-0004。
 
 **domainTag 字符串（精确）：**
 
@@ -246,7 +243,7 @@ func ClassifyCone(newPort, newHost, localEqual bool) ConeKind
 | 信封 | `EncodeRequest`、`DecodeRequest`、`EncodeResponse`、`DecodeResponse`；`Status`；第 3 节 sentinel |
 | 地址 | `Addr`、`Normalize`、18 字节编解码、三种比较 |
 | SN | Cone/Live 首字节盖戳、`BuildSN`、`VerifySN`、默认与可注入 `TmpNFunc` |
-| 证明 | `IssueChallenge`、`VerifyChallenge`、`IssueValidation`、`VerifyValidation`、`KeyHash`、`EquixSeed`（SHA-256 拼接）、`SolvePuzzle` / `VerifyPuzzle` 薄封装（固定 `threshold`，起始 nonce `13`） |
+| 证明 | `IssueChallenge`、`VerifyChallenge`、`IssueValidation`、`VerifyValidation`、`KeyHash`、`EquixSeed`、`SolvePuzzle` / `VerifyPuzzle`（固定 `threshold`，起始 nonce `13`） |
 | 判定 | `ClassifyCone`、`ConeKind`（仅五态；一次调用的 `ConeResult` 在 `stun2/client`） |
 | 常量 | 第 10 节全部导出 |
 

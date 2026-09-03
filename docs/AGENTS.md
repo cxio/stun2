@@ -49,7 +49,7 @@
 
 位于 `decision/` 目录。主要是补充 Conception 未直接固定的必要规则、方向取舍/选择，边界划分（可能需要明确不做什么）、架构选型、实现路径等关键决策。通常需要权衡收益/成本/风险/资源等。
 
-不涉及详细的技术规格，评判标准是：如果没有这些决策，技术规格部分（Spec）将无法进行。文档内容基本上遵循如下结构：
+不涉及详细的技术规格（数值、字节布局、Go 签名留给 Spec）。评判标准是：如果没有这些决策，技术规格部分（Spec）将无法进行。构想已钉死的规则直接引用，不在 Decision 重述一遍。文档内容基本上遵循如下结构：
 
 - 背景 （Context）
 - 决策 （Decision）
@@ -62,7 +62,7 @@
 |------------|------------|------------|
 | DEC-0001 | `DEC-0001-layer-boundaries.md` | 三层职责与包边界：连接所有权、裸 UDP 读取、驱动模型、一次调用范围 |
 | DEC-0002 | `DEC-0002-control-plane-rpc.md` | 控制面信封、每请求一条 Stream、失败可区分；通路失败只关连接 |
-| DEC-0003 | `DEC-0003-cone-result-set.md` | ConeKind（矩阵五态）与 ConeResult（含提前终态）拆分；QUIC Only 归属；Inquire 收集满 3 / 超时 7s 下限 2 |
+| DEC-0003 | `DEC-0003-cone-result-set.md` | ConeKind（矩阵五态）与 ConeResult（含提前终态）拆分；QUICOnly 单次即返回；受托池须支持收集窗内持续抽选 |
 | DEC-0004 | `DEC-0004-live-silent-path.md` | Live 关 Conn 后旧路径只读裸 UDP，抑制 Stateless Reset；首次 Time.0 在关闭残留结束后；服务端禁发从观测 Conn closing 至下次 Live |
 | DEC-0005 | `DEC-0005-ephemeral-state.md` | 服务端允许的短暂表闭集；Live 10s 限速键为被测 Address |
 
@@ -84,6 +84,8 @@ Live 控制通道与被测映射的地址关系、取消预环境验证，已写
 
 位于 `spec/` 目录，由 Conception + Decision 生成的技术规格（Spec）。如模块划分、接口与数据设计、字节编码、字段宽度、实现的规则等。请在必要的精简和足够的细粒度之间保持良好权衡。
 
+理由与取舍见 Decision / Conception，此处不重复。跨篇共用的常量以 SPEC-0001 为目录。
+
 文档内容大致遵循如下结构：
 
 - 来源追溯
@@ -95,7 +97,7 @@ Live 控制通道与被测映射的地址关系、取消预环境验证，已写
 
 |    编号    |    文件    |  覆盖主题  |
 |------------|------------|------------|
-| SPEC-0001 | `SPEC-0001-wire-and-core.md` | 控制信封、错误码、地址、SN、HMAC/时间窗、Equi-X 调用、`stun2` 导出 |
+| SPEC-0001 | `SPEC-0001-wire-and-core.md` | 控制信封、错误码、地址、SN、HMAC/时间窗、Equi-X 调用、协议常量目录、`stun2` 导出 |
 | SPEC-0002 | `SPEC-0002-stun-addr.md` | `STUN:Addr` 载荷与两端行为 |
 | SPEC-0003 | `SPEC-0003-stun-cone.md` | Passage / Inquire / Challenge / Cone / NewHost、判定矩阵、`ConeResult`、Inquire 收集（满 3 / 7s / 11s）、受托池接口 |
 | SPEC-0004 | `SPEC-0004-stun-live.md` | Live.Port / Live、静默路径、粗测/精测、短暂表 |

@@ -7,8 +7,8 @@
 ## 决策 （Decision）
 
 1. **旧路径保留 `quic.Transport`，专用于 `ReadNonQUICPacket()` 接收 SN。** 不再在该 Transport 上接受新的 QUIC 连接，也不再从该路径发出任何 QUIC 包（关闭残留窗口内的 `CONNECTION_CLOSE` 除外，见第 3 条）。
-2. **必须抑制 Stateless Reset，并从 `Time.0` 起旧路径零发送。** 具体 API 对应留给 Spec，但验收条件是：自 `Time.0` 至本轮结束（含间隔等待），对该 UDP 四元组抓包，除服务端按 `STUN:Live` 请求发出的 SN 和客户端对 SN 的回应外，不应出现其它 UDP 载荷。共享 Listener 不得设置 `StatelessResetKey`（该端口上所有 QUIC 连接失去 Stateless Reset，服务端重启后其它会话只能等到 idle timeout；接受这一部署代价，不另开 Live 发送口）。
-3. **首次 `Time.0` 在关闭残留结束之后。** 旧路径 `quic.Conn` 必须干净关闭（向对端发出 `CONNECTION_CLOSE`），好让服务端停发。等待时长用实现内部 PTO（含 `max_ack_delay`），为 `max(3*PTO, 1s)`，禁止自拼可能偏短的 `SmoothedRTT+4*MeanDeviation`。首次之后的 `Time.0` 仍按构想规则，不再受关闭残留影响。
+2. **必须抑制 Stateless Reset，并从 `Time.0` 起旧路径零发送。** 共享 Listener 不得设置 `StatelessResetKey`（该端口上所有 QUIC 连接失去 Stateless Reset，服务端重启后其它会话只能等到 idle timeout；接受这一部署代价，不另开 Live 发送口）。API 对应见 Spec；验收条件：自 `Time.0` 至本轮结束（含间隔等待），对该 UDP 四元组抓包，除服务端按 `STUN:Live` 请求发出的 SN 和客户端对 SN 的回应外，不应出现其它 UDP 载荷。
+3. **首次 `Time.0` 在关闭残留结束之后。** 旧路径 `quic.Conn` 必须干净关闭（向对端发出 `CONNECTION_CLOSE`）。等待时长用实现内部 PTO（含 `max_ack_delay`），为 `max(3*PTO, 1s)`，禁止自拼可能偏短的 `SmoothedRTT+4*MeanDeviation`。首次之后的 `Time.0` 仍按构想规则，不再受关闭残留影响。
 4. **服务端禁发范围（Address 作用域，含首次窗）。** 自「以该 Address 为 `RemoteAddr` 的 `quic.Conn` 进入 closing」起，到「本轮下一次 `STUN:Live` 被接受并开始发 SN」止（**含** Live.Port 之后、首次 `STUN:Live` 之前，不限于两次 `STUN:Live` 之间）：服务端发往该 Address 的 UDP 必须为 0。唯一例外：收到客户端 `CONNECTION_CLOSE` 后允许当场回一个 `CONNECTION_CLOSE`，然后停写。closing 重传须为收包触发；客户端在残留结束后已静默，服务端不得靠 draining 定时器继续发包。不为此新增短暂表或控制面。探测 SN 只在当前 `STUN:Live` 验证通过之后，从 Listener 同一 IP:Port 发出。
 5. **这是测量正确性的硬不变量**，不是可选优化。做不到静默的实现不得声称符合 `STUN:Live`。精测默认 5s 是二分步长的收敛终止误差，不是本条的强度依据。
 
@@ -18,7 +18,7 @@
 
 存活期测的是「静默多久之后入站探测还能否穿过映射」。旧路径上任何自发 UDP（Reset、重传）都会刷新部分 NAT 的计时器，结果系统性偏长。`Time.0` 是这段静默的起点：关闭瞬间仍会有 `CONNECTION_CLOSE` 及其短窗口重传，必须落在 `Time.0` 之前。首次静默窗（关观测 Conn → 首次 `STUN:Live`）与后续两次 `STUN:Live` 之间同样需要服务端零发送；只写后者会漏掉最关键的一段。不新表、不新 RPC、不拆 Listener、不改发送口。
 
-不拆栈的默认选择出于三条理由：
+不拆栈的默认选择：
 
 1. **关 Conn 之后仍要在同一 Socket 上收 SN。** 保留 Transport 则继续走全库已选定的 `ReadNonQUICPacket()`，没有停读循环再改 `ReadFrom` 的交接，也不在 Live 上另做一套 demux。
 2. **拆栈的测量风险在关闭顺序，不在 `Transport.Close()` 本身。** `Transport.Close()` 不发 `CONNECTION_CLOSE`，客户端若未先让服务端停发，服务端会按 PTO 续探，旧映射被续活；只读路径没有所有权转移，也没有「先关 Conn、等残留、再停 Transport」的顺序负担。
@@ -26,11 +26,9 @@
 
 ## 影响 （Consequences）
 
-- `stun2/client` 在 Step.1 须：干净关闭旧 `quic.Conn` → 等到 `max(3*实现PTO, 1s)` → 记录首次 `Time.0` → 进入「只读裸 UDP」模式；不得丢弃 Transport。
-- 构造该 Transport 与共享 Listener 时不得启用 Stateless Reset；该旧路径上不再 `Dial` / `Listen`。本服务端口上其它 QUIC 会话同样没有 Reset。
-- 测试需要能证明：自 `Time.0` 至本轮结束无 `CONNECTION_CLOSE` 重传、无 Reset、无其它额外发包；关 Conn 后到首次 SN 前，服务端→该 Address 在 `Time.0` 之后包数为 0（抓包或可注入的 Transport 替身）。
-- 服务端处理 `STUN:Live` 的发送循环不得与该 Listener 上其它 QUIC 连接的重传混淆到被测 Address；被测映射在窗口内不是一条活跃 QUIC 连接。
-- 引入 quic 依赖时须在**实际选用的模块**（含 server Listener）上复验 closing 为收包触发；若实现会定时重传 `CONNECTION_CLOSE`，须在收到 CC 后立即销毁该 Conn 以保证不再写出。
+- Spec 将第 1–4 条映射为客户端 Step.1 的关闭/等待/只读步骤，以及服务端 Listener 的 Reset / 禁发规则。
+- 测试须能证明：自 `Time.0` 至本轮结束无 `CONNECTION_CLOSE` 重传、无 Reset、无其它额外发包；关 Conn 后到首次 SN 前，服务端→该 Address 在 `Time.0` 之后包数为 0。
+- 引入 quic 依赖时须在**实际选用的模块**（含 server Listener）上复验 closing 为收包触发；若实现会定时重传 `CONNECTION_CLOSE`，须在收到 CC 后立即销毁该 Conn 以保证不再写出。quic 模块路径与版本由 Plan 选定，须满足本决策第 3、4 条。
 
 ## 构想层依据 （Conception References）
 
@@ -38,4 +36,4 @@
 
 ## 开放问题 （Open Questions）
 
-无。quic 模块路径与版本由 Plan 在引入依赖时选定，须满足本决策第 3、4 条（实现内部 PTO、closing 收包触发或收到 CC 后立即停写、`StatelessResetKey` 可置 nil）。
+无。
