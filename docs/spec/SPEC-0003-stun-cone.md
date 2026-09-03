@@ -6,7 +6,8 @@
 - `DEC-0001`：连接所有权、裸 UDP 读取权、状态机 + Runner、一次调用一个地址族、受托池只定义接口、正式探测必须 `ListenUDP`。
 - `DEC-0002`：统一信封；通路失败只关连接。
 - `DEC-0003`：`ConeKind` / `ConeResult` 类型拆分；池须支持持续抽选；不可达不暴露内部原因。
-- `DEC-0005`：源服务器仅允许 Challenge→受托 表；受托按 Target 单一发包去重；SN 不设重放缓存。
+- `DEC-0005`：源服务器 Challenge→受托 表与 Inquire 客户端地址暂存；受托按 Target 单一发包去重；SN 不设重放缓存。
+- `DEC-0007`：Inquire 暂存对端地址 30s，拒绝为 `RateLimited`。
 - SPEC-0001：信封、SN、Challenge HMAC、Equi-X 调用、常量。
 - SPEC-0002：`GetAddr`。
 
@@ -150,9 +151,11 @@ type TrusteePool interface {
 
 #### 4.2 Inquire
 
-池为 nil 或 `Pick` 返回 error：立即 `InsufficientTrustees`。
+先做限速（§4.7）。未通过则 `RateLimited`，不 `Pick`、不向受托发 `Challenge`、不写 Challenge 表、不启动收集窗。
 
-否则在截止时刻 `now+7s` 内持续抽选并并发 `Challenge`：
+池为 nil：立即 `InsufficientTrustees`（不写入地址暂存）。
+
+否则写入（或刷新）该客户端地址的到期时间 `now+30s`，再在截止时刻 `now+7s` 内持续抽选并并发 `Challenge`：
 
 1. 已收集 **3** 份：立即向客户端返回（不必等到 7s）。
 2. 对尚未尝试（exclude = 已成功 + 已失败/拒绝 + 仍在途）的节点 `Pick`，建议每次 `n = 3-已收集数`（也可一次多抽以竞速）；对返回的受托发 `Challenge`。
@@ -168,7 +171,7 @@ type TrusteePool interface {
 - 值：对应 `Delegate`。
 - TTL：可配置，默认 2 分钟（与挑战有效期相同）。
 - `STUN:Cone` 用过即删（该请求里出现的每一份）。
-- 容量建议 4096；插入时先删过期，仍满则拒新 Inquire（`InsufficientTrustees`）或驱逐最旧过期项。
+- 容量建议 4096；插入时先删过期，仍满则拒该次 Inquire（`InsufficientTrustees`）。不用 `RateLimited`。
 - 进程重启后表空，进行中的 Cone 失败，客户端换节点或重走 Inquire。
 
 #### 4.4 `STUN:Cone` 处理
@@ -197,6 +200,14 @@ Passage：回确认后 6s 内发完 2 个包。`Key=请求 Key32`，`source=0`�
 - 重复到达：静默丢弃，不发包，响应同正常（空成功）。
 - 容量建议 4096；插入时先删过期，仍满则驱逐最早到期项。
 - 表只记录「该 Target 已发过包」，不缓存 SN 报文本身。
+
+#### 4.7 Inquire 客户端地址暂存（DEC-0005 闭集第 5 项）
+
+- 键：由 Inquire 控制通道 `Normalize(conn.RemoteAddr())` 去掉端口后的地址。IPv4 与 IPv4-mapped 取 32 位地址（存储可用 `::ffff:x.x.x.x`）；IPv6 取 `/64`（接口 ID 置零）。不得含端口。实现自定具体字节，语义必须与上述前缀等价。
+- 值：到期时间。
+- 键仍在有效期内 → `RateLimited`。同一键的检查与写入必须串行；并发 Inquire 同一键至多接受一个。
+- 进入收集窗时写入或刷新为 `now+30s`，即使该次随后 `InsufficientTrustees`。池不可用等未进入收集窗的立即拒绝不写入。
+- TTL：30s，不可配置。容量建议 65536；插入时删过期，仍满则驱逐最早到期项。不得改键。满时驱逐，不因本表满而拒绝 Inquire。
 
 
 ### 5. 客户端 API
@@ -243,6 +254,7 @@ PushNonQUICPacket(pkt []byte, from net.Addr)
 - 不判定 `UDP Blocked`。
 - 不实现受托发现与连接池。
 - 不实现 Equi-X 算法。
+- 不把后续 `STUN:Cone` 绑回 Inquire 连接；地址暂存不是会话。
 
 
 ## 待决问题
@@ -253,6 +265,5 @@ PushNonQUICPacket(pkt []byte, from net.Addr)
 ## 对 Plan 的约束
 
 - 依赖 SPEC-0001、SPEC-0002。
-- TDD 顺序建议：Challenge 签发/校验 → Equi-X 往返（cgo）→ SN 来源位与假冒过滤 → `ClassifyCone`（五态）→ `Pick` 在 exclude 后可返回 0 个且不报错 → 服务端 Inquire 收集（满 3 立即返回；7s 超时且 2 份成功；满 2 未到截止不得返回）→ 客户端 Inquire 11s 超时为 error → 客户端状态机（`SymLike`/`QUICOnly` 提前终止；替身 Transport / 注入包）→ Runner（返回 `ConeResult`）。
 - 正式探测路径的测试必须使用未连接 UDP（或模拟其「接受未知源 IP」的行为）；禁止用已 `DialUDP` 的替身冒充正式探测。
 - 受托池用假对象：记录 `Challenge` / `NewHost` 调用次数与参数。

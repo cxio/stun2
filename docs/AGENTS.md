@@ -64,7 +64,9 @@
 | DEC-0002 | `DEC-0002-control-plane-rpc.md` | 控制面信封、每请求一条 Stream、失败可区分；通路失败只关连接 |
 | DEC-0003 | `DEC-0003-cone-result-set.md` | ConeKind（矩阵五态）与 ConeResult（含提前终态）拆分；QUICOnly 单次即返回；受托池须支持收集窗内持续抽选 |
 | DEC-0004 | `DEC-0004-live-silent-path.md` | Live 关 Conn 后旧路径只读裸 UDP，抑制 Stateless Reset；首次 Time.0 在关闭残留结束后；服务端禁发从观测 Conn closing 至下次 Live |
-| DEC-0005 | `DEC-0005-ephemeral-state.md` | 服务端允许的短暂表闭集；Live 10s 限速键为被测 Address |
+| DEC-0005 | `DEC-0005-ephemeral-state.md` | 服务端允许的短暂表闭集；Live 10s 限速键为被测 Address；Inquire 客户端地址暂存见 DEC-0007 |
+| DEC-0006 | `DEC-0006-live-bounds.md` | Live 粗测/精测可携带区间：导出给应用、精测只认区间、一次调用三种模式 |
+| DEC-0007 | `DEC-0007-inquire-rate-limit.md` | Inquire 暂存对端地址 30s 以限速；键去端口（IPv4 整地址 / IPv6 /64），`RateLimited` |
 
 Live 控制通道与被测映射的地址关系、取消预环境验证，已写入 `conception/keepalive.md`，不单独立项。
 
@@ -97,10 +99,10 @@ Live 控制通道与被测映射的地址关系、取消预环境验证，已写
 
 |    编号    |    文件    |  覆盖主题  |
 |------------|------------|------------|
-| SPEC-0001 | `SPEC-0001-wire-and-core.md` | 控制信封、错误码、地址、SN、HMAC/时间窗、Equi-X 调用、协议常量目录、`stun2` 导出 |
+| SPEC-0001 | `SPEC-0001-wire-and-core.md` | 控制信封、错误码、地址、SN、HMAC/时间窗、Equi-X 调用、协议常量目录、`LiveBounds` / `CanFine`、`stun2` 导出 |
 | SPEC-0002 | `SPEC-0002-stun-addr.md` | `STUN:Addr` 载荷与两端行为 |
-| SPEC-0003 | `SPEC-0003-stun-cone.md` | Passage / Inquire / Challenge / Cone / NewHost、判定矩阵、`ConeResult`、Inquire 收集（满 3 / 7s / 11s）、受托池接口 |
-| SPEC-0004 | `SPEC-0004-stun-live.md` | Live.Port / Live、静默路径、粗测/精测、短暂表 |
+| SPEC-0003 | `SPEC-0003-stun-cone.md` | Passage / Inquire / Challenge / Cone / NewHost、判定矩阵、`ConeResult`、Inquire 收集（满 3 / 7s / 11s）、Inquire 限速、受托池接口 |
+| SPEC-0004 | `SPEC-0004-stun-live.md` | Live.Port / Live、静默路径、粗测/精测、`LiveBounds` 导出/注入、短暂表 |
 
 维护规则：
 

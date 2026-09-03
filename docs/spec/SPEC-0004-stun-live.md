@@ -7,13 +7,14 @@
 - `DEC-0002`：`STUN:Live.Port` / `STUN:Live` 共用信封。
 - `DEC-0004`：旧路径保留 Transport，只读裸 UDP；抑制 Stateless Reset；首次 `Time.0` 在关闭残留之后；服务端禁发从观测 Conn closing 至下次被接受的 `STUN:Live`（含首次窗）；等待用实现内部 PTO。
 - `DEC-0005`：Key32 发送窗、按被测 Address 的 10s 限速。
-- SPEC-0001：信封、SN、Validation HMAC、常量。
+- `DEC-0006`：可携带区间导出/注入；精测只认区间；一次调用三种模式；构造与 Runner 同一配置。
+- SPEC-0001：信封、SN、Validation HMAC、常量、`LiveBounds` / `CanFine`。
 - SPEC-0002：地址观测语义；本服务用 `STUN:Live.Port` 而非 `STUN:Addr` 取批条。
 
 
 ## 概述
 
-规定存活期探测的载荷、静默路径、服务端短暂表，以及粗测 / 精测状态机。控制通道不必与被测映射同公网 IP。控制连接断开则丢弃本轮，不把上次成功间隔记为存活期。超时与间隔表见 SPEC-0001 §10。
+规定存活期探测的载荷、静默路径、服务端短暂表，以及粗测 / 精测状态机与可携带区间。控制通道不必与被测映射同公网 IP。控制连接断开则丢弃本轮，不把上次成功间隔记为存活期。超时与间隔表见 SPEC-0001 §10。
 
 
 ## 规格正文
@@ -108,14 +109,14 @@ quic 实现对已关闭连接的 `CONNECTION_CLOSE` 重传窗口为 `3*PTO`。�
 
 - 成功：`lastSuccess = current`；`step = current`；`next = 2*current`。
 - 失败：`raw = current - step/2`（首次即失败时视 `step = Start`，故 `raw = Start/2`）；`step = step/2`；`lastFail = current`。再按本节开头的下限规则得到 `next` 或停止。
-- 若 `next` 将超过 45 分钟：改为测 **40 分钟**。40 分钟成功则结果为 40 分钟（上限，实际可能更长）；失败则按失败规则回退。
+- 若 `next` 将超过 40 分钟则改测 **40 分钟**。40 分钟成功则结果为 40 分钟（上限，实际可能更长）；失败则按失败规则回退。
 - **结束（正常）：** 出现「失败 → 成功」后，结果为最后一次成功间隔。
 - **结束（下限停）：** 因 `next < 10s` 而按 10s 补测仍失败，或 `Start=10s` 首次失败：有 `lastSuccess` 则取之，否则 error。
-- **结束（迭代上限）：** 可配置次数上限（默认不限制或由调用方设）。到达上限仍无「失败→成功」则取 `lastSuccess`；若从未成功，返回 error（配置过高或异常，换节点由应用决定）。
+- **结束（迭代上限）：** 可配置次数上限（默认不限制或由调用方设）。到达上限仍无「失败→成功」则取 `lastSuccess`；若从未成功，返回 error（配置过高或异常，换节点由应用决定）。已有 `lastFail` 时 `Kind=NATLifetime`，`Bounds` 可注入另一次精测；从未失败则为 `Unconverged`。
 
 **精测**（可与粗测不同服务器；必须从 §2.1 起新的一轮）：
 
-输入粗测的 `n = lastSuccess`、`M = lastFail`（无 `lastFail` 则不能精测）。`D = M-n`。`step = D/2`，`current = n + step`（`n ≥ 10s` 故 `current ≥ 10s`）。
+输入 `stun2.LiveBounds`：`n = LastSuccess`、`M = LastFail`。`CanFine` 为假则不能精测（无 `LastFail`、或其未严格大于 `LastSuccess`、或越出 §3 合法范围）。`D = M-n`。`step = D/2`，`current = n + step`（`n ≥ 10s` 故 `current ≥ 10s`）。
 
 ```
 循环：
@@ -130,7 +131,9 @@ quic 实现对已关闭连接的 `CONNECTION_CLOSE` 重传窗口为 `3*PTO`。�
 
 与构想示例一致：会执行那次 `step < Precision` 的测试，再停。结果为精测过程中最后一次成功；若精测从未成功，结果为 `n`。
 
-粗测因一直成功触达上限、没有 `M` 时，不能进入精测；Runner 返回粗测上限结果并标明未收敛。
+粗测因一直成功触达上限、没有 `M` 时，不能进入精测；Runner 返回粗测上限结果并标明未收敛（`Kind=Unconverged`，`Bounds.LastFail` 为零）。
+
+粗测结束后的区间必须写入结果的 `Bounds`（`LastSuccess` / `LastFail`），即使本次调用不再做精测。同机先粗后精（`Precision>0` 且未注入区间）时，粗测若 `CanFine` 则立刻从 §2.1 新开精测，不把中间区间交还调用方；若不能精测则按上句返回未收敛。
 
 ### 4. 服务端
 
@@ -164,25 +167,71 @@ quic 实现对已关闭连接的 `CONNECTION_CLOSE` 重传窗口为 `3*PTO`。�
 
 ### 5. 客户端 API
 
+区间类型与可否精测在根包（SPEC-0001 §11）：
+
+```go
+// stun2
+type LiveBounds struct {
+    LastSuccess time.Duration // n；零值表示尚无成功
+    LastFail    time.Duration // M；零值表示尚无失败
+}
+
+// CanFine 当且仅当 LastSuccess ≥ 10s、LastFail > LastSuccess、且 LastFail ≤ 40 分钟。
+func CanFine(b LiveBounds) bool
+```
+
+`LiveBounds` 不含服务器身份。应用跨调用、跨服务器持有；库不写盘、不在库内记住上次调用的区间，也不校验区间来自哪台服务器。
+
 ```go
 type LiveConfig struct {
-    StartInterval time.Duration // 必填，≥10s；next<10s 时按 10s 测一次，不得在 10s 上反复迭代
-    Precision     time.Duration // 默认 5s，收敛终止误差；0 表示只粗测
-    MaxCoarseIter int           // 0 表示不限制
+    StartInterval time.Duration     // 从粗测起必填，≥10s；只精测时忽略，不得当作 n/M
+    Precision     time.Duration     // 见下表
+    MaxCoarseIter int               // 0 表示不限制；只精测时忽略
     TmpN          stun2.TmpNFunc
+    Bounds        *stun2.LiveBounds // nil = 从粗测起；非 nil = 只精测，须 CanFine
 }
 
 type LiveKind int // NATLifetime, OpenOrFirewall, Unconverged
 
 type LiveResult struct {
     Kind     LiveKind
-    Lifetime time.Duration // Kind==NATLifetime 时为最后成功间隔
+    Lifetime time.Duration    // Kind==NATLifetime 或 Unconverged 时为最后成功间隔
+    Bounds   stun2.LiveBounds // 本次结束时的区间；OpenOrFirewall 为零值
 }
 
+func NewLive(server Material, cfg LiveConfig) (*LiveMachine, error)
 func RunLive(ctx context.Context, server Material, cfg LiveConfig) (LiveResult, error)
 ```
 
-`Material` 见 SPEC-0003 §5。状态机可单步推进（预探测 / 关旧连 / 等待残留 / 等间隔 / 请求 / 收包 / 粗测更新 / 精测更新）。Runner 用库内计时跑完；`ctx` 取消则停止，不写盘。
+`NewLive` 与 `RunLive` 使用同一份 `LiveConfig`，在构造时校验：
+
+| `Bounds` | `Precision` | 行为 |
+|----------|-------------|------|
+| `nil` | `0` | 只粗测。`StartInterval` 必填且 ≥10s，否则配置错误 |
+| `nil` | `>0` | 同机先粗后精。粗测结束后若 `CanFine` 则从 §2.1 新开精测；否则返回 `Unconverged` |
+| 非 `nil` 且 `CanFine` | `0` | 只精测，精度用默认 5s。忽略 `StartInterval` 与 `MaxCoarseIter` |
+| 非 `nil` 且 `CanFine` | `>0` | 只精测，用该精度。忽略 `StartInterval` 与 `MaxCoarseIter` |
+| 非 `nil` 且 `!CanFine` | 任意 | 配置错误，不开始探测 |
+
+`StartInterval` 不是 `n` / `M` 的替代。只精测不得要求调用方再填起始间隔。
+
+`Material` 见 SPEC-0003 §5。一次构造 / 一次 `RunLive` 绑定一台服务器、一个地址族。
+
+`LiveMachine` 可单步推进（预探测 / 关旧连 / 等待残留 / 等间隔 / 请求 / 收包 / 粗测更新 / 精测更新）。`Bounds` 非空时不进入粗测更新，算法从精测起，I/O 仍从 §2.1 起。`RunLive` 即 `NewLive` 后循环 `Step` 至结束。Runner 用库内计时跑完；`ctx` 取消则停止，不写盘。测试可注入时钟（同 SPEC-0003）。应用注入 `Transport` 时，`LiveMachine` 与 Runner 暴露与 SPEC-0003 相同的 `PushNonQUICPacket`。
+
+```go
+func (m *LiveMachine) Step(ctx context.Context) (done bool, err error)
+func (m *LiveMachine) Result() LiveResult
+```
+
+`Step` 返回 `done==true` 后 `Result` 有效。配置错误在 `NewLive` / `RunLive` 返回 `error`，不产出结果。
+
+`LiveResult.Bounds`：
+
+- `OpenOrFirewall`：零值。
+- 只粗测结束：`LastSuccess` 为最后成功间隔（同 `Lifetime`）；有过失败则填 `LastFail`，否则为零。`CanFine(Bounds)` 为真时应用可另一次调用注入该值做精测。
+- 精测结束（含同机先粗后精）：`LastSuccess` 为精测最后成功（同 `Lifetime`；精测从未成功则为注入的 `n`）；`LastFail` 为精测过程中最后失败，若精测从未失败则保留进入精测时的 `M`。
+- `Unconverged`：`LastSuccess` 为上限上的最后成功，`LastFail` 为零。
 
 控制连接断开：本轮无存活期，error 或 `Kind` 可区分「中止」与「测到失效」。**映射超时**用上一次成功间隔作为结果；**控制断开**不使用该间隔。
 
@@ -190,7 +239,8 @@ func RunLive(ctx context.Context, server Material, cfg LiveConfig) (LiveResult, 
 ## 边界与限制
 
 - 不要求控制通道与被测映射同 IP。
-- 不把粗测进度持久化。
+- 不把粗测进度持久化到磁盘或库内跨调用状态；区间由 `LiveResult.Bounds` 交还应用。
+- 不得用 `StartInterval` 注入粗测结果。
 - 不发现节点、不换节点。
 - 网关异常不在协议范围。
 - 不得增加 Inquire 会话 ID 或按控制通道 IP 的 Live 会话表。
@@ -204,6 +254,6 @@ func RunLive(ctx context.Context, server Material, cfg LiveConfig) (LiveResult, 
 ## 对 Plan 的约束
 
 - 依赖 SPEC-0001、SPEC-0002。可与 SPEC-0003 并行实现服务端表与客户端状态机，但静默路径测试必须单独验收。
-- TDD 顺序建议：Validation 签发/校验 → 限速表按 Address 键 → 发送间隔表 → 粗测/精测纯函数（用构想中的全部示例作表驱动；含 `Start=15s` 失败后按 10s 补测一次、该次再失败则停；`Start=10s` 失败直接 error、不二次测 10s）→ 关 Conn + 等待 `max(3*实现PTO, 1s)` → 抓包或 Transport 替身证明 `Time.0` 后无额外发送。
+- TDD 顺序建议：Validation 签发/校验 → 限速表按 Address 键 → 发送间隔表 → `CanFine` 与 `LiveBounds` 零值 → 粗测/精测纯函数（以 `LiveBounds` 为输入，用构想中的全部示例作表驱动；含 `Start=15s` 失败后按 10s 补测一次、该次再失败则停；`Start=10s` 失败直接 error、不二次测 10s；步进逻辑不得只写在状态机闭包里）→ `NewLive` / `RunLive`：`Precision=0` 只粗测时 `Result.Bounds` 带出 `LastFail`（若有）；注入 `CanFine` 区间则跳过粗测、从 §2.1 做精测；`!CanFine` 的区间为配置错误；未注入 `Bounds` 时无论 `StartInterval` 为何都走粗测，不得把起始间隔解释为精测输入 → 关 Conn + 等待 `max(3*实现PTO, 1s)` → 抓包或 Transport 替身证明 `Time.0` 后无额外发送。
 - 静默验收：自 `Time.0` 至本轮结束，除约定 SN 外无其它 UDP 载荷；关 Conn 后到首次 SN 前，服务端→该 Address 在 `Time.0` 之后包数为 0（含 `CONNECTION_CLOSE`）。做不到则不得声称符合 `STUN:Live`。
 - `go.mod` 引入的 quic 模块路径与版本由 Plan 选定（须满足 DEC-0004：`StatelessResetKey` 可 nil、`ReadNonQUICPacket`、`CloseWithError`、实现内部 PTO、server Listener closing 收包触发或收到 CC 后立即停写）；另引入（若尚未引入）`github.com/cxio/equix-cgo/puzz`。

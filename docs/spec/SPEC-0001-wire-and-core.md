@@ -8,6 +8,8 @@
 - `DEC-0001`：`stun2` 为纯函数与编解码，无网络 IO；TmpN 默认可注入；Equi-X 只组装输入并调用 `github.com/cxio/equix-cgo/puzz`。
 - `DEC-0002`：信封为方法名 + Version + 载荷；每请求一条 Stream；失败可区分。
 - `DEC-0003`：判定矩阵五态（`ConeKind`）的纯函数落在根包；一次调用的 `ConeResult` 见 SPEC-0003。
+- `DEC-0006`：Live 可携带区间与 `CanFine` 落在根包；配置与 Runner 见 SPEC-0004。
+- `DEC-0007`：Inquire 地址暂存有效期 30s、IPv6 `/64` 键；错误码沿用 `ErrRateLimited`。
 - Equi-X 接口以 [cxio/equix-cgo/puzz](https://github.com/cxio/equix-cgo/tree/main/puzz) 为准。
 
 
@@ -204,6 +206,8 @@ func ClassifyCone(newPort, newHost, localEqual bool) ConeKind
 | NewHost 探测包间隔 | 100–500ms |
 | Inquire 收集超时（源服务器） | 7s |
 | Inquire 客户端等待挑战集 | 11s |
+| Inquire 客户端地址暂存有效期 | 30s |
+| Inquire 限速键 IPv6 前缀 | /64 |
 | Live 收包超时（自发出 `STUN:Live` 请求） | 10s（须覆盖发送表 7.9s + 余量） |
 | Live 同一 Address 最小间隔 | 10s |
 | Live 发送间隔表 (ms) | 100, 200, 400, 800, 1600, 1600, 1600, 1600（累计 7.9s） |
@@ -226,7 +230,7 @@ func ClassifyCone(newPort, newHost, localEqual bool) ConeKind
 | 每台受托 NewHost 包数 | 3（上限 3，可向下配） |
 | Live 单轮发包数 | 8（上限 8，可向下配，取间隔表前缀） |
 
-粗测起始间隔**无默认值**，调用方必填，且 ≥ 10s。算出的 `next` 低于 10s 时取 10s 测一次；若该次再失败（或 `Start=10s` 的首次已失败），停止：有最后一次成功则用之，否则报告失败。不得在 10s 上反复迭代。本库不报告短于 10s 的存活期。算法见 SPEC-0004。
+粗测起始间隔**无默认值**，从粗测起的调用必填，且 ≥ 10s。只精测时必填的是 `LiveBounds`，不要求起始间隔（DEC-0006）。算出的 `next` 低于 10s 时取 10s 测一次；若该次再失败（或 `Start=10s` 的首次已失败），停止：有最后一次成功则用之，否则报告失败。不得在 10s 上反复迭代。本库不报告短于 10s 的存活期。算法见 SPEC-0004。
 
 **domainTag 字符串（精确）：**
 
@@ -245,6 +249,7 @@ func ClassifyCone(newPort, newHost, localEqual bool) ConeKind
 | SN | Cone/Live 首字节盖戳、`BuildSN`、`VerifySN`、默认与可注入 `TmpNFunc` |
 | 证明 | `IssueChallenge`、`VerifyChallenge`、`IssueValidation`、`VerifyValidation`、`KeyHash`、`EquixSeed`、`SolvePuzzle` / `VerifyPuzzle`（固定 `threshold`，起始 nonce `13`） |
 | 判定 | `ClassifyCone`、`ConeKind`（仅五态；一次调用的 `ConeResult` 在 `stun2/client`） |
+| 存活期区间 | `LiveBounds`、`CanFine`；粗测/精测步进纯函数（以 `LiveBounds` 为输入，算法见 SPEC-0004 §3） |
 | 常量 | 第 10 节全部导出 |
 
 根包**不得**导入 `quic-go`，不得做网络、计时、重试、节点发现。
@@ -265,6 +270,6 @@ func ClassifyCone(newPort, newHost, localEqual bool) ConeKind
 
 ## 对 Plan 的约束
 
-- 先实现并单测根包：信封往返、错误码、地址规范化、ULEB128 最简性、SN 首字节与 HMAC、Challenge / Validation 时间窗、`ClassifyCone` 五格、`EquixSeed` 拼接（SHA-256）。
+- 先实现并单测根包：信封往返、错误码、地址规范化、ULEB128 最简性、SN 首字节与 HMAC、Challenge / Validation 时间窗、`ClassifyCone` 五格、`LiveBounds` / `CanFine`（零值不能精测；`LastSuccess≥10s` 且 `10s < LastFail ≤ 40min` 才能精测）、`EquixSeed` 拼接（SHA-256）。
 - Equi-X 封装测试在 `CGO_ENABLED=1` 下调用真实 `github.com/cxio/equix-cgo/puzz`；用已知 Challenge / Addr / KeyHash 做 `SolvePuzzle`→`VerifyPuzzle` 往返；断言包级 `threshold` 等于 `puzz.FromProbability(0.1)` 的成功结果，起始 nonce 为 `13`。不在本库测试 nonce 搜索或 HashWX。控制面编解码测试必须用 16 字节 `equix.Solution` + 大端 Nonce，不得用 `puzz.Solution.MarshalBinary`。
 - 不得在根包引入 IO。依赖：`github.com/cxio/equix-cgo/puzz` 与标准库 `crypto/sha256`；本阶段不引入 `quic-go`。
