@@ -6,6 +6,8 @@ STUN2：NAT 映射类型与存活期探测库（Go 模块 `github.com/cxio/stun2
 
 **全新构建**：忽略 git 历史（历史中的旧实现与旧文档已删除，不具任何权威性）。当前权威设计为 `docs/conception/` 下三篇构想，以及 `docs/decision/` 中的 `DEC-0001`～`DEC-0007`。
 
+`DEC-0008` 是完整评审后的**待裁决单**，本身不构成权威规则：其中 12 项（尤其 R2/R3/R4/R5 构成的 `STUN:Live` 阻塞链）裁决前不得据以编码，Live 部分的 Plan 亦不应开工。
+
 - `pubaddr.md` — `STUN:Addr` 公网地址获取（最基础服务，另被 Cone 预探测与正式探测复用）
 - `conelevel.md` — `STUN:Cone` NAT 类型探测，含 `STUN:Cone.Passage`, `STUN:Cone.Inquire`, `STUN:Cone.Challenge`, `STUN:Cone.NewHost`。
 - `keepalive.md` — `STUN:Live.Port/STUN:Live` NAT 映射存活期探测

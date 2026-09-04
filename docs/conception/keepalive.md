@@ -122,7 +122,12 @@ Validation := Timestamp || HMAC_SHA256( BaseKey, domainTag || ClientAddr.IP || C
 - Distance:   新的时间窗口大小（秒数）。即至下一次 `STUN:Live` 请求前的时长 + 余量。
 - Validation: 之前暂存的服务器派发的批准证明。
 
-> **注**：服务器收到请求后的操作见 [下文](#服务端)。
+> **关于 Distance**：
+> 客户端请求 `STUN:Live` 后服务器才发包探测，以确定之前的静默时长是否有效（未导致NAT映射改变）。
+> 因此新的时长申请需要假定本次 `STUN:Live` 请求的探测会成功（由此到下一次 `STUN:Live` 请求前的时长通常会翻倍——取决于客户端探测策略）。
+> 这一时长是由客户端自己决定的，因此也由客户端自己上报（申请）。
+>
+> 另外，服务器端对 Distance 有最长时间限制（45分钟），客户端应当遵守此约定，超出此限制没有意义（会被静默截断）。
 
 客户端在 `ClientAddr.Port` 上侦听，收到服务器发送的探测包（`SN`）后，验证并回应：
 
@@ -132,7 +137,7 @@ Validation := Timestamp || HMAC_SHA256( BaseKey, domainTag || ClientAddr.IP || C
 > **探测间隔：**
 > 本次 `Time.0` 到下一次 `STUN:Live` 请求的时间间隔。也即待确认的 NAT 映射生存期。
 
-服务器会在 QUIC 连接上返回新的探测证明 `Validation`，客户端应及时更新暂存。
+服务器会在 QUIC 连接上返回新的探测证明 `Validation`，客户端应及时更新暂存。**注**：服务器收到请求后的操作见 [下文](#服务端)。
 
 
 #### 状态判断

@@ -1,6 +1,6 @@
 # 文档结构
 
-本文档在 `docs` 目录之下，因此子目录和文档文件相对于此目录，不再从项目根目录表达路径。
+本文档在 `docs` 目录之下，因此子目录相对于此目录，不再从项目根目录表达路径。
 
 
 ## 目录设计
@@ -9,10 +9,10 @@
 
 | 层级 | 目录 | 作者 | 说明 |
 |------|------|------|------|
-| Conception（构想层） | `conception/` | 人工 + AI 辅助 | 作者对问题的探索、思考、边界分析以及解决方式等的初始构想。 |
-| Decision（决策层） | `decision/` | AI + 人工互助 | 补充完善 Conception 尚未明确的模糊部分或关键的需要细化的决策。 |
-| Spec（规格层） | `spec/` | AI 生成 + 人工审阅 | 详细技术规格，追溯自 Conception + Decision。 |
-| Plan（计划层） | `plan/` | AI 生成 + 人工复核 | 按阶段实施的计划（TDD 任务、包边界、文件清单），追溯自 Spec。 |
+| Conception（设计构想） | `conception/` | 人工 + AI 辅助 | 作者对问题的探索、思考、边界分析以及解决方式等的初始构想。 |
+| Decision（架构决策） | `decision/` | AI + 人工互助 | 补充完善 Conception 尚未明确的模糊部分或关键的需要细化的决策。 |
+| Spec（技术规格） | `spec/` | AI 生成 + 人工审阅 | 详细技术规格，追溯自 Conception + Decision。 |
+| Plan（实施计划） | `plan/` | AI 生成 + 人工复核 | 按阶段实施的计划（TDD 任务、包边界、文件清单），追溯自 Spec。 |
 
 ### 权重关系
 
@@ -26,111 +26,16 @@
 
 `plans/`（带 s）用于 AI Agent 工作过程中的临时实施计划，不作为正式文档的一部分；正式计划在 `plan/`。
 
-
-## 维护总则（Agent）
-
-以上章节和本章节不可修改，这是文档结构的基础设计和关系逻辑。
-
-下面四个章节记录了项目的设计构想、决策、技术规格和实施计划部分，需要根据实际情况更新。
+另外，上级目录中的 `working/` 属于工作间目录（如果有），存放临时杂物，也不在正式文档序列里。
 
 
-## 设计构想（Conception）
+## 维护规则（Agent）
 
-位于 `conception/` 目录下。主要是探索思考，澄清要解决的真实问题、目标场景和用户、预期价值等。是一些初步的构想设计，可能会收集多种可能的方向。
+四个子目录分别存放了项目的设计构想、决策、技术规格和实施计划的文档。
 
-|    功能    |     文件     |  简要说明  |
-|------|-------------|-------------|
-| NAT 地址探测 | `pubaddr.md` | 向服务器发送 `STUN:Addr` 请求，获得自身公网地址，最简单基础服务。 |
-| NAT 类型探测 | `conelevel.md` | 向服务器请求 `STUN:Cone` 服务（含 `STUN:Cone.Passage`），探知自己的 NAT Cone 类型，每台受托服务器最多发送**3**个探测包。 |
-| NAT 存活期探测 | `keepalive.md` | 向服务器请求 `STUN:Live` 服务（含 `STUN:Live.Port`），测试自己 NAT 映射的生命期，单轮最多**8**个消息包发送；每一次静默间隔 ≥ **10s**。 |
+- 设计构想: `conception/`
+- 架构决策: `decision/`
+- 技术规格: `spec/`
+- 实施计划: `plan/`
 
-
-## 架构决策（Decision）
-
-位于 `decision/` 目录。主要是补充 Conception 未直接固定的必要规则、方向取舍/选择，边界划分（可能需要明确不做什么）、架构选型、实现路径等关键决策。通常需要权衡收益/成本/风险/资源等。
-
-不涉及详细的技术规格（数值、字节布局、Go 签名留给 Spec）。评判标准是：如果没有这些决策，技术规格部分（Spec）将无法进行。构想已钉死的规则直接引用，不在 Decision 重述一遍。文档内容基本上遵循如下结构：
-
-- 背景 （Context）
-- 决策 （Decision）
-- 理由 （Rationale）
-- 影响 （Consequences）
-- 构想层依据 （Conception References）
-- 开放问题 （Open Questions）
-
-|    编号    |    文件    |  覆盖主题  |
-|------------|------------|------------|
-| DEC-0001 | `DEC-0001-layer-boundaries.md` | 三层职责与包边界：连接所有权、裸 UDP 读取、驱动模型、一次调用范围 |
-| DEC-0002 | `DEC-0002-control-plane-rpc.md` | 控制面信封、每请求一条 Stream、失败可区分；通路失败只关连接 |
-| DEC-0003 | `DEC-0003-cone-result-set.md` | ConeKind（矩阵五态）与 ConeResult（含提前终态）拆分；QUICOnly 单次即返回；受托池须支持收集窗内持续抽选 |
-| DEC-0004 | `DEC-0004-live-silent-path.md` | Live 关 Conn 后旧路径只读裸 UDP，抑制 Stateless Reset；首次 Time.0 在关闭残留结束后；服务端禁发从观测 Conn closing 至下次 Live |
-| DEC-0005 | `DEC-0005-ephemeral-state.md` | 服务端允许的短暂表闭集；Live 10s 限速键为被测 Address；Inquire 客户端地址暂存见 DEC-0007 |
-| DEC-0006 | `DEC-0006-live-bounds.md` | Live 粗测/精测可携带区间：导出给应用、精测只认区间、一次调用三种模式 |
-| DEC-0007 | `DEC-0007-inquire-rate-limit.md` | Inquire 暂存对端地址 30s 以限速；键去端口（IPv4 整地址 / IPv6 /64），`RateLimited` |
-
-Live 控制通道与被测映射的地址关系、取消预环境验证，已写入 `conception/keepalive.md`，不单独立项。
-
-
-维护规则：
-
-- 新增 Decision 前必须先检查 `conception/` 是否已经明确该规则。
-- 若 Conception 已明确，直接引用 Conception，不新增 Decision。
-- 若后续 Conception 修订吸收了某个 Decision，应删除或标记该 Decision 已被吸收。
-- Decision 文件命名为 `DEC-<NNNN>-<short-description>.md`。其中 `<NNNN>` 为序号，可以有类别区分（如 `0201`，第2类第1项），也可没有类别（如 `0001`）。
-
-> **提示：**
-> 对于小项目，本层可能会与下面的规格（Spec）层合并。
-
-
-## 技术规格（Spec）
-
-位于 `spec/` 目录，由 Conception + Decision 生成的技术规格（Spec）。如模块划分、接口与数据设计、字节编码、字段宽度、实现的规则等。请在必要的精简和足够的细粒度之间保持良好权衡。
-
-理由与取舍见 Decision / Conception，此处不重复。跨篇共用的常量以 SPEC-0001 为目录。
-
-文档内容大致遵循如下结构：
-
-- 来源追溯
-- 概述
-- 规格正文
-- 边界与限制
-- 待决问题
-- 对 Plan 的约束
-
-|    编号    |    文件    |  覆盖主题  |
-|------------|------------|------------|
-| SPEC-0001 | `SPEC-0001-wire-and-core.md` | 控制信封、错误码、地址、SN、HMAC/时间窗、Equi-X 调用、协议常量目录、`LiveBounds` / `CanFine`、`stun2` 导出 |
-| SPEC-0002 | `SPEC-0002-stun-addr.md` | `STUN:Addr` 载荷与两端行为 |
-| SPEC-0003 | `SPEC-0003-stun-cone.md` | Passage / Inquire / Challenge / Cone / NewHost、判定矩阵、`ConeResult`、Inquire 收集（满 3 / 7s / 11s）、Inquire 限速、受托池接口 |
-| SPEC-0004 | `SPEC-0004-stun-live.md` | Live.Port / Live、静默路径、粗测/精测、`LiveBounds` 导出/注入、短暂表 |
-
-维护规则：
-
-- Spec 服从于 Conception 与 Decision。
-- 每篇「来源追溯」必须可回溯到具体 Conception 章节与 `DEC-<NNNN>`。
-- 待决项严格限于全局待决集，相关规格须显式标注，不得默认选值固化。
-
-
-## 实施计划（Plan）
-
-位于 `plan/` 目录，由 Spec 拆解、转化的有依赖关系的阶段性实施计划（任务序列）。需要估算工作量、分配任务、设定里程碑与验收标准。可能还需要暴露阻塞点，并揭示可并行的部分。
-
-注意不必编写大量的代码，那是在执行计划时才需要的，请保持适当的清晰和简洁但依然有足够的指导性。
-
-文档内容大致遵循如下结构：
-
-- 来源规格
-- 包边界/非目标
-- 建议文件
-- TDD Task
-- 阶段验收/门禁
-
-|    文件    | 覆盖 Spec | 对应包（层） |
-|------------|---------------|--------------|
-| （待更新） |  （待更新）   |  （待更新）  |
-
-维护规则：
-
-- 决策引用为 `DEC-<NNNN>` 且主题匹配。
-- 待决项对应的 Task 显式标注阻塞/占位。
-- 实现任何功能前，应先读对应 `plan/` 文件，再回溯 `spec/`，如有疑问查 `decision/` 与 `conception/`。
+当读取、创建或修改触及相应部分，请读取并参考其中的 `AGENTS.md`，如果有必要，请更新其中的文件清单。
