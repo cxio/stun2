@@ -16,16 +16,17 @@
 
 |    编号    |    文件    |  覆盖主题  |
 |------------|------------|------------|
-| DEC-0001 | `DEC-0001-layer-boundaries.md` | 三层职责与包边界：连接所有权、裸 UDP 读取、驱动模型、一次调用范围 |
-| DEC-0002 | `DEC-0002-control-plane-rpc.md` | 控制面信封、每请求一条 Stream、失败可区分；通路失败只关连接 |
-| DEC-0003 | `DEC-0003-cone-result-set.md` | ConeKind（矩阵五态）与 ConeResult（含提前终态）拆分；QUICOnly 单次即返回；受托池须支持收集窗内持续抽选 |
-| DEC-0004 | `DEC-0004-live-silent-path.md` | Live 关 Conn 后旧路径只读裸 UDP，抑制 Stateless Reset；首次 Time.0 在关闭残留结束后；服务端禁发从观测 Conn closing 至下次 Live |
-| DEC-0005 | `DEC-0005-ephemeral-state.md` | 服务端允许的短暂表闭集；Live 10s 限速键为被测 Address；Inquire 客户端地址暂存见 DEC-0007 |
-| DEC-0006 | `DEC-0006-live-bounds.md` | Live 粗测/精测可携带区间：导出给应用、精测只认区间、一次调用三种模式 |
-| DEC-0007 | `DEC-0007-inquire-rate-limit.md` | Inquire 暂存对端地址 30s 以限速；键去端口（IPv4 整地址 / IPv6 /64），`RateLimited` |
-| DEC-0008 | `DEC-0008-pending-rulings.md` | **临时裁决单，本身不构成权威规则**：评审发现的 13 项待裁决（信封 Version 作用域、Live 的 `Distance` 语义、控制面拒绝与映射失效的区分、服务端 Live 非 QUIC 读取与分发、粗测起始间隔上界、Equi-X/cgo 落点、Challenge 绑定材料、受托信任边界、收集窗提前返回、首次 `Time.0` 偏置、错误码覆盖面、Inquire 限速与能力发现、闭集遗漏 Cone 发送窗密钥）。另含「按收录判据被排除的项」，记录复核后不成立、不必再提的问题。逐项裁决后吸收进目标文档并删除本文 |
+| DEC-0001 | `DEC-0001-layer-boundaries.md` | 四包职责与边界：连接所有权、裸 UDP 读取、驱动模型、一次调用范围、`stun2/pow`、Challenge 绑 `SPKIF`、上游服务名识 |
+| DEC-0002 | `DEC-0002-control-plane-rpc.md` | 控制面信封、协议全局 Version、每请求一条 Stream、失败可区分（含过期 / 受托拒绝 / 不可用）；通路失败只关连接 |
+| DEC-0003 | `DEC-0003-cone-result-set.md` | ConeKind（矩阵五态）与 ConeResult（含提前终态）拆分；QUICOnly 单次即返回；受托池持续抽选；池穷尽且 ≥2 立即返回；术语对照 |
+| DEC-0004 | `DEC-0004-live-silent-path.md` | Live 关 Conn 后旧路径只读裸 UDP，抑制 Stateless Reset；首次 Time.0 为 t_CC+1s（窗内有重传则取真实时刻）；服务端禁发从观测 Conn closing 至下次 Live |
+| DEC-0005 | `DEC-0005-ephemeral-state.md` | 服务端短暂表闭集五项；发送窗含各服务密钥与 Live Address 注册；常驻非 QUIC 读循环；受托信任边界（拉黑源服务器） |
+| DEC-0006 | `DEC-0006-live-bounds.md` | Live 粗测/精测可携带区间：导出给应用、精测只认区间、显式 LiveMode、起始间隔 [10s, 40min]、40 分钟上限为 Unconverged |
+| DEC-0007 | `DEC-0007-inquire-rate-limit.md` | Inquire 暂存对端地址；默认 5s、可上调、不得低于 5s；键去端口（IPv4 整地址 / IPv6 /64），`RateLimited` |
 
 Live 控制通道与被测映射的地址关系、取消预环境验证，已写入 `conception/keepalive.md`，不单独立项。
+
+曾用临时裁决单 `DEC-0008-pending-rulings.md` 已吸收完毕，备存于仓库根目录 `working/`，不在本索引内。
 
 
 **维护规则：**

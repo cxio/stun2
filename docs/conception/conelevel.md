@@ -1,9 +1,11 @@
 # NAT 类型/层级探测：`STUN:Cone`
 
-客户端首先需要连入STUN服务网络，获取多个服务节点的联系信息，其中包含建立安全 QUIC 连接所需的如 `SPKI` 指纹 `Hash256(Cert.SPKI)`、可选的 `ECHConfig` 等。
-详见 [cxio/p2p 项目](https://github.com/cxio/p2p)。
+客户端首先需要连入STUN服务网络，获取多个服务节点的联系信息，其中包含建立安全 QUIC 连接所需的如 `SPKI` 指纹 `SPKIF = Hash256(Cert.SPKI)` 和可选的 `ECHConfig` 等。
 
 然后客户端就可以与这些服务节点建立连接，并请求探测服务。
+
+> **参考：**
+> 实际上 STUN2 是 [cxio/p2p](https://github.com/cxio/p2p) 基网上的专用子网，其通过名识（`stun2-service`）来获取同类节点并组网。
 
 
 ## 技术栈
@@ -130,7 +132,7 @@ SN = Rnd16 || HMAC_SHA256(Key, domainTag || Rnd16 || TmpN) || TmpN
 
 #### 受托协商
 
-受托服务器收到协助请求后，若愿意提供协助，即生成工作量挑战种子（`Challenge`）响应。
+受托服务器收到协助请求后，若愿意提供协助，即生成工作量挑战种子（`Challenge`）响应；若不愿协助，返回可区分的拒绝，源服务器将该节点计入已尝试并继续抽选。
 
 ```go
 // 截止时间长度（2分钟，可配置）
@@ -148,11 +150,11 @@ Expire := Encode( Now + Distance )
 // 受托服务器生成挑战种子：
 // DelegateKey 委托服务器密钥（通常启动后随机生成）
 // domainTag 域标签：STUN:Cone.Challenge
-// ServAddr 源服务器地址（IP:Port）
-Challenge = Timestamp || HMAC_SHA256( DelegateKey, domainTag || ServAddr || Expire )
+// SPKIF 源服务器长期身份：当前 QUIC 对端叶证书的 Hash256(Cert.SPKI)，32 字节
+Challenge = Timestamp || HMAC_SHA256( DelegateKey, domainTag || SPKIF || Expire )
 ```
 
-挑战种子没有目标限定，仅绑定源服务器地址且有效期很短。
+挑战种子没有目标限定，仅绑定源服务器 `SPKIF` 且有效期很短。
 
 
 #### 受托收集
@@ -310,8 +312,8 @@ if Now > Expire {
 
 // 种子合法性
 // domainTag: STUN:Cone.Challenge
-// ServAddr: 源服务器地址
-Hash := HMAC_SHA256( DelegateKey, domainTag || ServAddr || Encode(Expire) )
+// SPKIF: 当前 QUIC 对端叶证书的 Hash256(Cert.SPKI)，须与签发时同一源服务器
+Hash := HMAC_SHA256( DelegateKey, domainTag || SPKIF || Encode(Expire) )
 
 // 若返回 false,
 // 可能是 Challenge 前置的时间戳被修改
@@ -409,7 +411,7 @@ return Hash == HMAC_SHA256(Key, domainTag || Rnd16 || TmpN)
 如果在超时前客户端（`NewPort` | `NewHost`）一个包都没收到，即判定该路径不可达。
 
 
-### 综合判断（Step.4）
+### 综合判断
 
 客户端根据 `NewPort` 和 `NewHost` 两个连入的情况，综合判断自身 NAT 类型或所在网域。
 
@@ -447,33 +449,47 @@ return Hash == HMAC_SHA256(Key, domainTag || Rnd16 || TmpN)
 
 ## 探测图示
 
+预探测与正式探测使用不同的本地 Socket，图中分开画出。预探测须向**不少于 3 台** Addr 服务器取映射（可配置）；图示只画 3 台。
+
 ```graph
-                          +------------------+        NewHost Request
-                          |      Serv.1      | ---------------------+
-                          +------------------+                      |
-                            |           /| |                        |
-                            |            | |                        |
-                            |          1)| |                        V
-+--------+                  |   STUN:Cone| |                   +--------+
-| Serv.0 |                  |            | |                   | Serv.2 |
-+--------+                  |            | |                   +--------+
-    |                       |            | | 2)                     |
-    |                    0) |            | | NewPort                | 2)
-    | 0)             Addr.1 |            | |                        | NewHost
-    | Addr.0                |            | |                        |
-    V                       V            | V                        V
-+-------------------------------------------------------------------------+
-|            LocalAddr                 Received?               Received?  |
-|                                          3)                      3)     |
-|  [Client]                                                               |
-+-------------------------------------------------------------------------+
+预探测（同一本地端口，不少于 3 台 Addr 服务器）
 
+    Serv.A --Addr.A--> +--------+ <--Addr.B-- Serv.B
+                       | Client |
+    Serv.C --Addr.C--> +--------+
 
-0)
-Addr.0 != Addr.1   --> Sym-Like. END.
-Addr.0 == Addr.1   --> (Next Step...)
+Addr.A / Addr.B / Addr.C 端口:
+    不全相同 --> Sym-Like. END.
+    全部相同 --> 通路确认 --> 正式探测
+```
 
-Serv.0/
+```graph
+正式探测（新 ListenUDP；与预探测映射无关）
+
+            +------------------------+            NewHost Request
+            |     源服务器 Serv.1    |--------------------------+
+            +------------------------+                          |
+               |               /| |                             |
+               |                | |                             |
+               |              1)| |                             V
+               |       STUN:Cone| |                       +----------+
+               |                | |                       |  Serv.2  |
+               |                | |                       |  (受托)  |
+               |                | | 2)                    +----------+
+            0) |                | | NewPort                     | 2)
+        GetAddr|                | |                             | NewHost
+               |                | |                             |
+               V                | V                             V
++-----------------------------------------------------------------------+
+|         LocalAddr          Received?                      Received?   |
+|                                3)                             3)      |
+|  [Client]  新 ListenUDP                                               |
++-----------------------------------------------------------------------+
+
+0) GetAddr：
+    与本机新映射比较 --> NewMap.Y / NewMap.N
+
+通路（可另拨任意一台，不必是 Serv.1）：
     QUIC => ok
     Naked UDP => timeout --> QUIC-Only. END.
 

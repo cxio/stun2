@@ -27,6 +27,19 @@
 3. `UDP Blocked`: UDP阻塞。可能 `UDP:53` 等系统级消息正常，但无法用于普通的UDP通讯。
 4. `QUIC Only`: 仅允许 UDP 链路的 QUIC 数据流通过，普通 UDP 被阻断。
 
+库导出标识符与上文简称的对照：
+
+| 上文简称 | 导出标识符 |
+|------|----------------|
+| `FullC` | `FullCone` |
+| `RC` | `RC` |
+| `P-RC` | `PRC` |
+| `Public` / Open Internet | `OpenInternet` |
+| `UDP Firewall` | `UDPFirewall` |
+| `Sym-Like` | `SymLike` |
+| `QUIC Only` | `QUICOnly` |
+| `UDP Blocked` | 不在库内判定 |
+
 
 ## 可连通性
 
