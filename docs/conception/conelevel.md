@@ -127,53 +127,56 @@ SN = Rnd16 || HMAC_SHA256(Key, domainTag || Rnd16 || TmpN) || TmpN
 
 源服务器会维护一个连接池，其中包含一定数量受托服务器的节点。
 
-当收到客户端的询问后，源服务器从连接池中随机抽选受托服务器，发送受托协商请求 `STUN:Cone.Challenge`。
+同时，源服务器也会维护一个挑战种子（`Challenge`，见下文）池，在必要时，从连接池中抽选受托节点发送 `STUN:Cone.Challenge` 请求，获取并补充挑战种子。
 
 
 #### 受托协商
 
-受托服务器收到协助请求后，若愿意提供协助，即生成工作量挑战种子（`Challenge`）响应；若不愿协助，返回可区分的拒绝，源服务器将该节点计入已尝试并继续抽选。
+受托服务器收到源服务器的 `STUN:Cone.Challenge` 请求后，若愿意提供协助，即生成工作量挑战种子（`Challenge`）响应；若不愿协助，返回错误表示拒绝。
 
 ```go
-// 截止时间长度（2分钟，可配置）
-// 受托服务器自己的配置，自己知道。
-Distance := 120 * time.Second
+// 有效期：10分钟（可配置）
+Distance := 600s
 
-// 字节序列
-// Go/time 中的 Now 为纳秒时间戳，忽略生成重复 Challenge 的可能。
+// 到期时间戳
+// Now 当前时间戳（Unix，秒）。
 // Encode 变长整数编码（ULEB128 最简编码）
-Timestamp := Encode( Now )
-
-// 截止时间戳
-Expire := Encode( Now + Distance )
+Timestamp := Encode( Now + Distance )
 
 // 受托服务器生成挑战种子：
-// DelegateKey 委托服务器密钥（通常启动后随机生成）
+// 前置到期时间戳，源服务器可据此处理时间相关问题。
+// DelegateKey 委托服务器密钥
 // domainTag 域标签：STUN:Cone.Challenge
-// SPKIF 源服务器长期身份：当前 QUIC 对端叶证书的 Hash256(Cert.SPKI)，32 字节
-Challenge = Timestamp || HMAC_SHA256( DelegateKey, domainTag || SPKIF || Expire )
+// SPKIF 源服务器持久身份：当前 QUIC 对端叶证书的 Hash256(Cert.SPKI)，32 字节
+Challenge = Timestamp || HMAC_SHA256( DelegateKey, domainTag || SPKIF || Timestamp )
 ```
 
-挑战种子没有目标限定，仅绑定源服务器 `SPKIF` 且有效期很短。
+挑战种子没有目标限定，仅绑定源服务器 `SPKIF`，因此该值可在有效期内共享：分配给任意询问的客户端节点。
+
+> **安全性：**
+> 受托协商响应仅创建挑战种子 `Challenge`，成本低，无需专门防刷设计。
+> 此由应用层自主发挥，比如对高频对端适当限流。本库不涉及。
 
 
-#### 受托收集
+#### 询问响应
 
-源服务器联系受托节点不一定每次都成功，可能有的节点暂时不愿受托（这是可能的）。源服务器需要持续尝试并收集同意协助的节点，当收集到**3**台服务器愿意协助后，即可向客户端回应收到的挑战种子（`Challenge`）集。
+收到客户端的询问后，服务器会从种子池中抽选**3~4**个不同受托节点的挑战种子，返回给客户端。如果种子数不足，返回错误，表示无法提供服务。
 
-收集有超时限制，固定为**7**秒（不可配置，因为需要与客户端询问超时配合），若超时时不足**3**台但已凑齐**2**台，也为有效，可向客户端正常回复。否则返回错误，表示无法提供 `STUN:Cone` 服务。
+> **解释：**
+> 理论上，`STUN:Cone` 探测的 `NewHost` 消息需要由 `2~3` 台受托节点各自发送**3**个消息，共 `6~9` 个探测包才足够。
+> 但这里挑战种子并不是实时从受托方获取的，当源服务器抽选种子时，对应的受托方可能已经下线，因此这里放宽到 `3~4` 个种子以适当容错。
+>
+> 但源服务器向受托方发送委托请求时，依然遵循最多**3**台受托的规则，即：如果已经成功委托了**3**台，则不再继续委托。
+> **注：**允许客户端只发送一个证明（即仅需一台受托发送 `NewHost`），因为这可能只是一个复核确认——客户端之前已经请求过探测了。
 
-同样，如果连接池数量不足，已遍历完全部节点，则与超时处理逻辑类似——凑齐2台即为有效，且无需等待到超时才返回。
-
-> **实现：**
-> 源服务器需要暂存挑战种子与受托服务器地址的映射。
+注意源服务器抽取挑战种子时，需要留出足够的剩余寿命（如**2**分钟），避免种子很快过期。
 
 
 ### 创建映射
 
-在超时期限（**11**秒）内，客户端若收到源服务器返回的挑战种子集，即确定服务可用。
+客户端收到源服务器返回的挑战种子集后，即可开启最终（也是最主要）的探测流程。
 
-然后，客户端用新的端口创建 `net.ListenUDP` 未连接 Socket，并在此之上创建到该源服务器的*新 QUIC 连接*。
+客户端用新的端口创建 `net.ListenUDP` 未连接 Socket，并在此之上创建到该源服务器的*新 QUIC 连接*。
 
 > **提示：**
 > 客户端可并发尝试不同服务器以请求探测，提高结果的可靠性，
@@ -223,6 +226,14 @@ threshold, _ := puzz.FromProbability(defaultRatio)
 soln, _ := puzz.Solve( SHA256(Challenge || Address || KeyHash), threshold, 13 )
 ```
 
+> #### 工作量负载
+>
+> 客户端可根据自身需要决定计算几个种子的工作量：
+> - 如果是初次探测，希望尽可能多的 NewHost 发送，通常全量实施（3~4个）。
+> - 如果是后期复核确认，可以少计算一些，比如仅 2 个（甚至 1 个）。
+>
+> 源服务器不会记录发送了多少个种子，因此也不会强制要求多少个证明（`≤4` 即可）。
+
 
 #### 发送请求
 
@@ -234,23 +245,25 @@ soln, _ := puzz.Solve( SHA256(Challenge || Address || KeyHash), threshold, 13 )
 
 > **提示：**
 > 达标率 0.1 时，`puzz` 期望约 6 轮 nonce，整体通常数百毫秒。
-> 需要限时或取消时用 `puzz.SolveContext`，不要依赖无上限的 `Solve`。
+> 需要限时或取消时可用 `puzz.SolveContext`，而不是无上限的 `Solve`。
 
 
 ### 服务响应
 
-#### 验证工作量
+#### 验证
 
-源服务器收到客户端请求后，提取数据，验证工作量：
+源服务器收到客户端请求后，提取数据检查并验证：
+
+**首先**：客户端发来的挑战种子必须存在于种子池里，否则无效。
+
+**工作量验证：**
 
 ```go
 import "github.com/cxio/equix-cgo/puzz"
 
 // 验证工作量：
-// ClientAddr 为即时提取，应与上面客户端 STUN:Addr 请求的结果相同。
-// 这是一种耦合约束，若不同即验证失败。
-//
-// ClientAddr 客户端公网地址，从底层连接提取
+// 应逐个验证，此仅示例其一。
+// ClientAddr 客户端公网地址，从底层连接提取，应与上面客户端 STUN:Addr 请求的结果相同。
 // KeyHash 会话密钥 Key32 封装：SHA256(Key32)
 soln := &puzz.Solution{
     Nonce: Nonce,
@@ -259,19 +272,13 @@ soln := &puzz.Solution{
 return puzz.Verify( SHA256(Challenge || ClientAddr || KeyHash), threshold, soln )
 ```
 
-> **实现：**
-> 源服务器需要暂存挑战种子到受托服务器地址的映射集，算是一种弱状态。
-> 挑战种子基于时间戳纳秒精度创建，忽略重复的可能，因此用完即弃。
->
-> 挑战种子暂存时间不超过**2**分钟（可配置），过期即可清理（低资源占用）。
-
 
 #### 完成服务
 
 如果验证通过，源服务器执行如下操作：
 
 - `NewPort`: 用一个新的随机端口（IP不变）向客户端发送探测包（`SN`）：数量**4**个，间隔时间 `100ms ~ 400ms` 随机选取。
-- `NewHost`: 向原受托服务器发送完整协助请求（`STUN:Cone.NewHost`）。
+- `NewHost`: 向原受托服务器发送完整协助请求 `STUN:Cone.NewHost`。
 
 NewPort 和 NewHost 可以多路并发，两者并不冲突。
 
@@ -289,46 +296,67 @@ NewPort 和 NewHost 可以多路并发，两者并不冲突。
 - Nonce:     配合工作量解的一个随机数。客户端提供。
 
 
+#### 请求限速
+
+恶意客户端可能发起大量委托询问和探测请求，干扰源服务器和受托节点的运行。因此需要设计某种限速措施。
+
+源服务器会创建一个客户端的**请求状态池**（委托询问和探测请求合并），键为客户端的 `NodeID`，值为一个数值（`0|1`）。
+
+当收到客户端*委托询问*时，如种子池不空，原则上可以提供服务：
+
+- 检查是否为有效询问（状态池无其条目或条目已过期）：创建/更新条目，键值为**2**（含1次冗余）。
+- 若客户端发起*探测请求*：检索条目，键值*减1*。**实现**：先减再验工作量。
+
+状态池条目有寿命期限，可相对较短（比如**60秒**，可配置），以节省资源。
+
+这样，当同一客户端再次发起请求时：
+
+- **委托询问**：如果池中有键且未过期，拒绝。否则走上面新建逻辑，放行。
+- **探测请求**：如果无键（未经询问），或有键但键值为**0**（探测已用完），拒绝。必须*先问再探*。
+
+当状态条目过期或被清理之后，同一客户端又可以继续发起委托询问，以及接下来的探测请求——重试是允许的。
+
+> **库边界：**
+> 节点的 `NodeID` 是基网 [cxio/p2p](https://github.com/cxio/p2p) 中必有的信息，且隐含工作量（秒级，初始启动一次性计算）。
+> 采用 `NodeID` 更安全，因为攻击者若通过切换身份来避开限速成本不低，而正常节点则无此问题。
+>
+> 注意 NodeID 不是 SPKIF，前者有工作量成本，后者只是节点证书 SPKI 的简单哈希。
+> NodeID 与 SPKIF 一样，都由上层应用自行负责，实际上，在节点初始连接时，就会验证对端传递来的 NodeID 是否合法。
+
+
 ### 受托协助
 
 #### 验证工作量
 
-受托服务器收到正式的协助请求后，验证发来的数据：
+受托服务器收到正式的协助请求后，验证发来的数据。
+
+**挑战种子验证：**
 
 ```go
-// 验证种子 Challenge
+// 检查有效期
+n := len(Challenge) - 32
+Timestamp := Challenge[:n]
 
-// 截止时间长度（配置值）
-Distance := 120 * time.Second
-
-// 当初时间戳
-NowOld := Challenge[0:len(Challenge)-32]
-Expire := Decode(NowOld) + Distance
-
-// 种子有效性
-if Now > Expire {
+if Now > Decode(Timestamp) {
     return false // 已过期
 }
 
-// 种子合法性
-// domainTag: STUN:Cone.Challenge
-// SPKIF: 当前 QUIC 对端叶证书的 Hash256(Cert.SPKI)，须与签发时同一源服务器
-Hash := HMAC_SHA256( DelegateKey, domainTag || SPKIF || Encode(Expire) )
-
-// 若返回 false,
-// 可能是 Challenge 前置的时间戳被修改
-return Hash == Challenge[len(NowOld):]
+// 合法性
+// domainTag: 同前 STUN:Cone.Challenge
+Hash := HMAC_SHA256( DelegateKey, domainTag || SPKIF || Timestamp )
+return Hash == Challenge[n:]
 ```
+
+**工作量验证：**
 
 ```go
 import "github.com/cxio/equix-cgo/puzz"
 
-// 验证工作量
-// Target 应当与前面 ClientAddr 和 Address 是同一个值。
 soln := &puzz.Solution{
     Nonce: Nonce,
     Solution: Solution,
 }
+// Target 与前面 ClientAddr 和 Address 应是同一个值。
 return puzz.Verify( SHA256(Challenge || Target || KeyHash), threshold, soln )
 ```
 
