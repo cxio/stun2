@@ -18,10 +18,7 @@
 
 |    编号    |    文件    |  覆盖主题  |
 |------------|------------|------------|
-| SPEC-0001 | `SPEC-0001-wire-and-core.md` | 控制信封、全局 Version、错误码（含 Declined / Unavailable / Expired）、地址与 SPKIF、SN、HMAC/时间窗、Equi-X 种子与 `stun2/pow`、协议常量、`LiveBounds` / `CanFine` / `LiveMode`、`stun2` 导出 |
-| SPEC-0002 | `SPEC-0002-stun-addr.md` | `STUN:Addr` 载荷与两端行为 |
-| SPEC-0003 | `SPEC-0003-stun-cone.md` | Passage / Inquire / Challenge / Cone / NewHost、判定矩阵、`ConeResult`、Inquire 收集（满 3 / 池穷尽满 2 立即返回 / 7s / 11s）、Inquire 限速、受托池接口、`NewHostRequest` |
-| SPEC-0004 | `SPEC-0004-stun-live.md` | Live.Port / Live、静默路径与首次 Time.0、粗测/精测与四种结束、`LiveMode`、`LiveBounds` 导出/注入、常驻非 QUIC 读循环与 Address 发送窗 |
+| （待更新） | （待更新） | （待更新） |  （待更新）  |
 
 
 **维护规则：**

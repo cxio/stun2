@@ -1,5 +1,7 @@
 # DEC-0008 待裁决项汇总（临时裁决单）
 
+> **备存。** 本文为完整评审后的临时裁决单，不构成权威规则。R1–R13 的用户裁决已吸收进 `docs/conception/`、`docs/decision/DEC-0001`～`DEC-0007` 与 `docs/spec/SPEC-0001`～`SPEC-0004`；附录中的 Spec 修正亦已写入 SPEC-0001～0004 与构想编辑。本文已移出 `docs/decision/`，仅供备查。
+
 ## 背景 （Context）
 
 对 `conception/`（3 篇）、`decision/`（DEC-0001～0007）、`spec/`（SPEC-0001～0004）做完整评审后，发现两类问题：
